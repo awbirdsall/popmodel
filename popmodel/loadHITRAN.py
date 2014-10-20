@@ -7,11 +7,11 @@ Created on Tue May 27 16:10:34 2014
 Next steps:
 Degeneracy of c state?
 """
+import atmcalcs as atm
 
 import numpy as np
 import ohcalcs as oh
 import matplotlib.pyplot as plt
-import atmcalcs as atm
 from scipy.integrate import ode
 from fractions import Fraction
 

@@ -20,7 +20,6 @@ loadHITRAN module.
 '''
 
 '''
-TODO: is basically saturating each IR bin accurate? -- notice that there's no stimulated emission once moves on -- accurate??
 TODO: make solveode more efficient:
 --only look at relevant part of abfeat.abs_freq based on ir width
 --change total integration time on-the-fly based on IR period
@@ -37,15 +36,15 @@ New to popmodel3:
 -consider populations both within and without rotational level of interest.
 -turn off UV laser calculations an option to save memory
 """
+import ohcalcs as oh
+import atmcalcs as atm
+import loadHITRAN as loadHITRAN
 
 import numpy as np
 import scipy.special
 import matplotlib.pyplot as plt
 from scipy.constants import k as kb
 from scipy.constants import c, N_A, pi
-import loadHITRAN
-import ohcalcs as oh
-import atmcalcs as atm
 from scipy.integrate import ode
 from math import floor
 
@@ -250,12 +249,23 @@ class KineticsRun(object):
         
     def addhitran(self,file,a):
         # Collect info from HITRAN and extract:
-        self.hpar = loadHITRAN.processHITRAN(file)
-        self.hline = self.hpar[a] # single set of parameters from hpar
+        hpar = loadHITRAN.processHITRAN(file)
+        self.hline = hpar[a] # single set of parameters from hpar
+        print 'addhitran: using {}({}) line at {:.4g} cm^-1'.format(self.hline['branch'],self.hline['line'],self.hline['wnum_ab'])
+
+    def makeAbs(self,file,a):
+        # Make an absorption feature object given a HITRAN file and line.
+        # Collect info from HITRAN and extract:
+        self.addhitran(file,a)
+        # Set up IR b<--a absorption profile
+        self.abfeat = Abs(wnum=self.hline['wnum_ab'])
+        self.abfeat.makeProfile(press=self.press,
+                                T=self.temp,
+                                g_air=self.hline['g_air'])
 
     def solveode(self, file='13_hit12.par', a=24, intperiods=2.1, avg_step_in_bin=20.):
         '''Integrate ode describing IR-UV two-photon LIF, given master equation
-        (with its Jacobian) and all relevant parameters. Use 'ohcalcs' and
+        (no Jacobian given) and all relevant parameters. Use 'ohcalcs' and
         'atmcalcs' modules.
         
         Define global parameters that are independent of HITRAN OH IR data within
@@ -277,20 +287,13 @@ class KineticsRun(object):
         '''
         print 'solveode: integrating at {} torr, {} K, OH in cell {:.2g} cm^-3'.format(self.press,self.temp,self.ohtot)
         print 'solveode: sweep mode: {}'.format(self.sweep.stype)
-        # Collect info from HITRAN and extract:
-        self.addhitran(file,a)
-        print 'solveode: using {}({}) line at {:.4g} cm^-1'.format(self.hline['branch'],self.hline['line'],self.hline['wnum_ab'])
-
-        # Set up IR b<--a absorption profile
-        self.abfeat = Abs(wnum=self.hline['wnum_ab'])
-        self.abfeat.makeProfile(press=self.press,
-                                T=self.temp,
-                                g_air=self.hline['g_air'])
+        # Set up IR b<--a absorption profile from HITRAN
+        self.makeAbs(file,a)
         
         # Algin bins for IR laser and absorbance features for integration
         self.sweep.alignBins(self.abfeat)
 
-        # set integration time based on IR sweep time
+        # set integration time based on IR sweep time and intperiods argument
         tl = self.sweep.tsweep*intperiods # total integration time
         avg_bintime = self.sweep.tsweep/(2*self.sweep.irwidth/self.sweep.binwidth) # for 'sin'. Twice as long for 'saw'
         dt = avg_bintime/avg_step_in_bin # avg 20 steps within each ir bin -- checked for agreement with 100 steps/bin
@@ -516,9 +519,9 @@ class KineticsRun(object):
             self.abcpop[:,:,0]=self.N[:,:,0:-1].sum(2)
             self.abcpop[:,:,1]=self.N[:,:,-1]
 
-        self.plotvlaser(self.abcpop[:,1,0]/self.ohtot,'Relative population in v\"=1, N\"=1, J\"=1.5','Fraction of total OH')
+        self.plotvslaser(self.abcpop[:,1,0]/self.ohtot,'Relative population in v\"=1, N\"=1, J\"=1.5','Fraction of total OH')
 
-    def plotvlaser(self,func,title='plot',yl='y axis'):
+    def plotvslaser(self,func,title='plot',yl='y axis'):
         '''make arbitrary plot in time w laser sweep as second plot'''
         if hasattr(self,'abcpop')==False and hasattr(self,'N')==False:
             print 'need to run solveode first!'
@@ -541,12 +544,17 @@ class KineticsRun(object):
         ax1.set_ylabel('Relative Frequency (MHz)')
         plt.show()    
 
-    def plotfeature(self):
+    def plotfeature(self,laslines=True):
         ''''''
         fig, (ax0) = plt.subplots(nrows=1)
-        ax0.plot(self.abfeat.abs_freq,self.abfeat.pop)
-        ax0.axvline(self.sweep.las_bins[0],ls='--')
-        ax0.axvline(self.sweep.las_bins[-1],ls='--')
+        ax0.plot(self.abfeat.abs_freq/1e6,self.abfeat.pop)
+        ax0.set_title('Calculated absorption feature, '+str(self.press)+' torr')
+        ax0.set_xlabel('Relative frequency (MHz)')
+        ax0.set_ylabel('Relative absorption')
+        
+        if laslines:
+            ax0.axvline(self.sweep.las_bins[0],ls='--')
+            ax0.axvline(self.sweep.las_bins[-1],ls='--')
 
     def saveOutput(self,file):
         ''''''
