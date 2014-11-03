@@ -173,7 +173,7 @@ class Abs(object):
         endfwhm=np.where(pop>=np.max(pop)*0.5)[0][-1]
         fwhm=abs_freq[endfwhm]-abs_freq[startfwhm]
         print'makeProfile: made abs profile'
-        print'makeProfile: abs profile has FHWM = {:.2g} MHz'.format(fwhm/1e6)
+        print'makeProfile: abs profile has FWHM = {:.2g} MHz'.format(fwhm/1e6)
         print'makeProfile: total width of stored array = {:.2g} MHz'.format(abswidth/1e6)
         # return np.array([abs_freq, pop])
 
