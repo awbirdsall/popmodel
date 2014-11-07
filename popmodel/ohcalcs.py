@@ -16,7 +16,7 @@ import atmcalcs as atm
 import math as m
 import numpy as np
 from scipy.constants import k as kb
-from scipy.constants import c, N_A, pi
+from scipy.constants import c, N_A, pi, h
 
 #######################
 
@@ -170,7 +170,7 @@ def b21(a21, freq=nu12):
     b21 : float
     Einstein B coefficient for stimulated emission, m^2 J^-1 s^-1.
     '''
-    b21 = a21 * atm.c_light**2 / (8. * m.pi * atm.h * freq**3)
+    b21 = a21 * c**2 / (8. * m.pi * h * freq**3)
     return b21
     # account for degeneracies?!?
 

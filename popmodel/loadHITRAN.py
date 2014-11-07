@@ -11,8 +11,7 @@ import atmcalcs as atm
 
 import numpy as np
 import ohcalcs as oh
-import matplotlib.pyplot as plt
-from scipy.integrate import ode
+import logging
 from fractions import Fraction
 
 def importhitran(file, columns=None):
@@ -186,7 +185,7 @@ def processHITRAN(file):
     vbc = atm.wavenum_to_Hz*wnum_bc
     vab = atm.wavenum_to_Hz*x['wnum_ab']
 
-    # Extract and calculate Einstein coefficients. See atmcalcs.py for details
+    # Extract and calculate Einstein coefficients. See ohcalcs.py for details
     # on convention used for calculating B coefficients.
     Aba = x['A']
     ga = x['g_low']
@@ -247,7 +246,7 @@ def processHITRAN(file):
                 ('line', '|S3')]
 
     alldata = np.rec.fromarrays(arraylist,dtype=dtypelist)
-    print 'processHITRAN: file processed'
+    logging.info('processHITRAN: file processed')
     return alldata
 
 # Following deprecated -- as of 14 Aug 2014, see 'popmodel'
