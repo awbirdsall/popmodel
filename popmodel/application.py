@@ -191,10 +191,11 @@ class Abs(object):
         endfwhm=np.where(pop>=np.max(pop)*0.5)[0][-1]
         fwhm=abs_freq[endfwhm]-abs_freq[startfwhm]
         logging.info('makeProfile: made abs profile')
-        logging.info('makeProfile: abs profile has FHWM = {:.2g} MHz'
+        logging.info('makeProfile: abs profile has FWHM = {:.2g} MHz'
             .format(fwhm/1e6))
         logging.info('makeProfile: total width of stored array = {:.2g} MHz'
             .format(abswidth/1e6))
+
         # return np.array([abs_freq, pop])
 
 def voigt(xarr,amp,xcen,sigma,gamma,normalized=False):
