@@ -139,7 +139,9 @@ quenchc = kqc * Q # s^-1
 ## Functions for calculations
 
 # N.B. Two conventions for Einstein B coefficient:
-# (1) Spectral radiance (intensity) L: J m^-2 s^-1 Hz^-1 sr^-1 = W m^-2 Hz^-1 sr^-1
+# (1) Spectral radiance (intensity) 
+# Spectral intensity L is laser power (W), per area, solid angle and light frequency
+# L: J m^-2 s^-1 Hz^-1 sr^-1 = W m^-2 Hz^-1 sr^-1
 #     units of B: m^2 J^-1 s^-1 = s kg^-1
 # (2) Energy density rho: J m^-3 Hz^-1 sr^-1 = W s m^-3 Hz^-1 sr^-1
 #     units of B: m^3 J^-1 s^-2 = m kg^-1
@@ -172,7 +174,6 @@ def b21(a21, freq=nu12):
     '''
     b21 = a21 * c**2 / (8. * m.pi * h * freq**3)
     return b21
-    # account for degeneracies?!?
 
 def b12(a21, g1, g2, freq=nu12):
     '''
