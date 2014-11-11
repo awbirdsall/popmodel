@@ -140,7 +140,7 @@ quenchc = kqc * Q # s^-1
 
 # N.B. Two conventions for Einstein B coefficient:
 # (1) Spectral radiance (intensity) 
-# Spectral intensity L is laser power (W), per area, solid angle and light frequency
+# Spectral intensity L is laser power per (area, solid angle and frequency)
 # L: J m^-2 s^-1 Hz^-1 sr^-1 = W m^-2 Hz^-1 sr^-1
 #     units of B: m^2 J^-1 s^-1 = s kg^-1
 # (2) Energy density rho: J m^-3 Hz^-1 sr^-1 = W s m^-3 Hz^-1 sr^-1
@@ -149,7 +149,7 @@ quenchc = kqc * Q # s^-1
 # L and rho are related by L = c*rho (see McQuarrie Ch. 15).
 # L and rho are also per solid angle, or sr^-1 -- see Wikipedia.
 
-def b21(a21, freq=nu12):
+def b21(a21, freq):
     '''
     Calculate Einstein coefficient for stimulated emission from A
     coefficient, using McQuarrie Eqn 15.13 and dividing by c to
@@ -165,7 +165,7 @@ def b21(a21, freq=nu12):
     a21 : float
     Einstein A coefficient for spontaneous emission, s^-1.
     freq : float
-    Frequency of transition, Hz. Default=IR transition in Tsuji et al.
+    Frequency of transition, Hz.
 
     Returns
     -------
@@ -175,7 +175,7 @@ def b21(a21, freq=nu12):
     b21 = a21 * c**2 / (8. * m.pi * h * freq**3)
     return b21
 
-def b12(a21, g1, g2, freq=nu12):
+def b12(a21, g1, g2, freq):
     '''
     Calculate Einstein coefficient for absorption from A coefficient.
 
@@ -184,16 +184,17 @@ def b12(a21, g1, g2, freq=nu12):
     a21: float
     Einstein A coefficient for spontaneous emission, s^-1.
     g1, g2: float
-    Degeneracies of lower and upper states.
+    Degeneracies of lower and upper states. Function converts g's to float
+    to avoid high likelihood of int division.
     freq : float
-    Frequency of transition, Hz. Default=IR transition in Tsuji et al.
+    Frequency of transition, Hz.
 
     Returns
     -------
     b12 : float
     Einstein B coefficient for absorption, m^2 J^-1 s^-1.
     '''
-    b12 = g1/g2 * b21(a21, freq)
+    b12 = float(g1)/float(g2) * b21(a21, freq)
     return b12
 
 def fwhm_doppler(nu, temp, mass):

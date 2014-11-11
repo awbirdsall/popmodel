@@ -49,30 +49,32 @@ class Sweep(object):
     '''
     Represent sweeping parameters of the laser. Before performing solveode on
     a KineticsRun, need to alignBins of Sweep: adjust Sweep parameters to
-    match Abs and align bins of Abs and Sweep.
+    match Abs and align bins of Abs and Sweep. solveode does this.
     '''
     def __init__(self,
-        stype='saw',
+        stype='sin',
         tsweep=1.e-4,
         width=500.e6,
         binwidth=1.e6,
         factor=.1,
         keepTsweep=False,
         keepwidth=False):
-        # Invariant parameters
-        self.tsweep=tsweep # s
+        # parameters that don't change after initiated
         self.ircen=0 # set center of swept ir
-        self.stype=stype # allowed: 'saw' or 'sin'
+        self.stype=stype # allowed: 'saw' or 'sin'. Anything else forces laser
+        # to just sit at middle bin. Have used stype='None' for some calcs,
+        # didn't bother to turn off alignBins -- some meaningless variables.
         self.binwidth=binwidth # Hz, have been using 1 MHz
 
-        # Sweep width -- alignBins can later reduce
+        # Sweep width and time -- alignBins can later reduce
         self.width=width # Hz
+        self.tsweep=tsweep # s
         # max is 500 MHz for OPO cavity sweep, 100 GHz for seed sweep
 
         # make initial las_bins array
         self.makebins()
 
-        # absortion cutoff relative to peak, used to reduce sweep width
+        # absorption cutoff relative to peak, used to reduce sweep width
         self.factor=factor
 
         # Whether alignbins readjusts sweep time or width
@@ -336,7 +338,7 @@ class KineticsRun(object):
         N : ndarray
         Relative population of 'a', 'b' and 'c' states over integration time.    
         '''
-        logging.warning('solveode: integrating at {} torr, {} K, OH in cell \
+        logging.info('solveode: integrating at {} torr, {} K, OH in cell \
             {:.2g} cm^-3'.format(self.press,self.temp,self.ohtot))
         logging.info('solveode: sweep mode: {}'.format(self.sweep.stype))
         # Set up IR b<--a absorption profile from HITRAN
@@ -374,6 +376,9 @@ class KineticsRun(object):
         elif stype=='sin':
             self.sweepfunc = np.round((num_las_bins-1)/2.\
                 *np.sin(2*pi/tindexsweep*tindex)+(num_las_bins-1)/2.)
+        else:
+            self.sweepfunc= np.empty(np.size(tindex))
+            self.sweepfunc.fill(np.floor(num_las_bins/2))
 
         # set up ODE
         self.time_progress=0 # laspos looks at this to choose sweepfunc index.
