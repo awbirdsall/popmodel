@@ -225,7 +225,10 @@ def processHITRAN(file):
                 FWHM_Dop_bc,
                 qyield,
                 branch,
-                line]
+                line,
+                Na,
+                Nb,
+                Nc]
 
     dtypelist = [('wnum_ab','float'),
                 ('wnum_bc','float'),
@@ -243,7 +246,10 @@ def processHITRAN(file):
                 ('FWHM_Dop_bc', 'float'),
                 ('qyield', 'float'),
                 ('branch', '|S1'),
-                ('line', '|S3')]
+                ('line', '|S3'),
+                ('Na','int'),
+                ('Nb','int'),
+                ('Nc','int')]
 
     alldata = np.rec.fromarrays(arraylist,dtype=dtypelist)
     logging.info('processHITRAN: file processed')

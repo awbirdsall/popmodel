@@ -138,9 +138,9 @@ class Sweep(object):
                 sweep time {:.2g} s'.format(self.width/1e6, self.tsweep))
         
         # report how much of the b<--a feature is being swept over:
-        part_swept=np.sum(abfeat.intpop)
+        self.part_swept=np.sum(abfeat.intpop)
         logging.info('alignBins: region swept by IR beam represents {:.1%} \
-            of feature\'s total population'.format(part_swept))
+            of feature\'s total population'.format(self.part_swept))
 
 class Abs(object):
     '''absorbance line profile, consisting of two 1D arrays:
@@ -302,10 +302,8 @@ class KineticsRun(object):
             .format(self.hline['branch'],self.hline['line'],
                 self.hline['wnum_ab']))
 
-    def makeAbs(self,file,a):
-        # Make an absorption feature object given a HITRAN file and line.
-        # Collect info from HITRAN and extract:
-        self.addhitran(file,a)
+    def makeAbs(self):
+        # Make an absorption profile using HITRAN line self.hline
         # Set up IR b<--a absorption profile
         self.abfeat = Abs(wnum=self.hline['wnum_ab'])
         self.abfeat.makeProfile(press=self.press,
@@ -342,9 +340,10 @@ class KineticsRun(object):
             {:.2g} cm^-3'.format(self.press,self.temp,self.ohtot))
         logging.info('solveode: sweep mode: {}'.format(self.sweep.stype))
         # Set up IR b<--a absorption profile from HITRAN
-        self.makeAbs(file,a)
+        self.addhitran(file,a)
+        self.makeAbs()
         
-        # Algin bins for IR laser and absorbance features for integration
+        # Align bins for IR laser and absorbance features for integration
         self.sweep.alignBins(self.abfeat)
 
         # set integration time based on IR sweep time and intperiods argument

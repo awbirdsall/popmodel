@@ -103,8 +103,11 @@ A_UV = pi*(.5*beam_diam_UV)**2
 
 # Spectral radiances (intensities) for master equations, W/m^2*sr*Hz
 # Note IR is CW laser, while UV is pulsed.
-Lab = power_IR/(A_IR*bandwidth_IR)
-Lbc = peak_power_UV/(A_UV*bandwidth_UV)
+def spec_intensity(power,area,bandwidth):
+    return power/(area*bandwidth)
+
+Lab = spec_intensity(power_IR,A_IR,bandwidth_IR)
+Lbc = spec_intensity(peak_power_UV,A_UV,bandwidth_UV)
 
 op_press = 2.    # operating pressure of detection cell, torr
                 # Julich LIF instrument operates at 
@@ -162,14 +165,14 @@ def b21(a21, freq):
 
     Parameters
     ----------
-    a21 : float
+    a21 : float (or 1D numpy array)
     Einstein A coefficient for spontaneous emission, s^-1.
-    freq : float
+    freq : float (or 1D numpy array)
     Frequency of transition, Hz.
 
     Returns
     -------
-    b21 : float
+    b21 : float (or 1D numpy array)
     Einstein B coefficient for stimulated emission, m^2 J^-1 s^-1.
     '''
     b21 = a21 * c**2 / (8. * m.pi * h * freq**3)
@@ -181,20 +184,20 @@ def b12(a21, g1, g2, freq):
 
     Parameters
     ----------
-    a21: float
+    a21: float (or 1D numpy array)
     Einstein A coefficient for spontaneous emission, s^-1.
-    g1, g2: float
+    g1, g2: float (or 1D numpy array)
     Degeneracies of lower and upper states. Function converts g's to float
     to avoid high likelihood of int division.
-    freq : float
+    freq : float (or 1D numpy array)
     Frequency of transition, Hz.
 
     Returns
     -------
-    b12 : float
+    b12 : float (or 1D numpy array)
     Einstein B coefficient for absorption, m^2 J^-1 s^-1.
     '''
-    b12 = float(g1)/float(g2) * b21(a21, freq)
+    b12 = np.array(g1).astype(float)/np.array(g2).astype(float) * b21(a21, freq)
     return b12
 
 def fwhm_doppler(nu, temp, mass):
