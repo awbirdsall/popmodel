@@ -81,18 +81,24 @@ def filterhitran(file, Scutoff=1e-20, vabmin=3250, vabmax=3800):
     OUTPUTS:
     --------
     data_filter : ndarray
-    Labeled array containing columns wnum_ab, S, A, g_air, E_low, ugq, lgq, ulq, llq,
-    g_up, g_low.
+    Labeled array containing columns wnum_ab, S, A, g_air, E_low, ugq, lgq,
+    ulq, llq, g_up, g_low.
     '''
     data = importhitran(file, (2, 3, 4, 5, 7, 10, 11, 12, 13, 17, 18))
 
-    wavnuminrange = np.logical_and(data['wnum_ab']>=vabmin, data['wnum_ab']<=vabmax)
+    wavnuminrange = np.logical_and(data['wnum_ab']>=vabmin,
+            data['wnum_ab']<=vabmax)
     data_filter = data[np.logical_and(data['S']>=Scutoff, wavnuminrange)]
     return data_filter
 
 def extractN(x):
     '''
     Extract N quantum number info from HITRAN quantum state data for OH.
+
+    Determine Na from the spin and J values provided in HITRAN, where
+    J = N + spin (spin = +/-1/2). Determine Nb from Na and the P/Q/R branch.
+
+    Determine Nc assuming the P branch transition will be used for c<--b.
 
     PARAMETERS:
     -----------
@@ -128,7 +134,7 @@ def extractN(x):
     Nc = Nb - 1    # Assuming P branch transition is most efficient for c<--b.
     return Na, Nb, Nc
 
-def calculateUV(Nc, wnum_ab):
+def calculateUV(Nc, wnum_ab, E_low):
     '''
     Calculate c<--b transition wavenumber, accounting for rotational states.
     Fails if Nc>4, so need to filter out high N transitions from HITRAN first
@@ -142,17 +148,20 @@ def calculateUV(Nc, wnum_ab):
     wnum_ab : ndarray
     Wavenumbers of b<--a transition, cm^-1.
 
+    E_low : ndarray
+    Energy level of 'a' state, cm^-1
+
     OUTPUTS:
     --------
     wnum_bc : ndarray
     Wavenumbers of c<--b transition, cm^-1.
     '''
-    wnum_00 = {4:32778.1, 3:32623.4, 2:32542, 1:32474.5, 0:32778.1}    # Using
-    # Erin/Glenn's values for v"=0 --> v"=1 --> v'=0, cm^-1
-    # Energy of transition depends on N number for c.
-    # For each transition, decide which wnum to use:
-    Ec = np.asarray([wnum_00[entry] for entry in Nc])    # Error if Nc>4 ...
-    wnum_bc = Ec - wnum_ab
+    # dict of N'-dependent c-state energy, cm^-1
+    # Using Erin/Glenn's values from 'McGee' for v'=0 c-state
+    E_cdict = {4:32778.1, 3:32623.4, 2:32542, 1:32474.5, 0:32778.1}    
+    # use dict to choose appropriate E_c
+    E_c = np.asarray([E_cdict[entry] for entry in Nc])    # Error if Nc>4 ...
+    wnum_bc = E_c - wnum_ab - E_low
     return wnum_bc
 
 def processHITRAN(file):
@@ -171,15 +180,15 @@ def processHITRAN(file):
     Outputs:
     --------
     alldata : ndarray
-    Labeled array containing columns wnum_ab, wnum_bc, S, A, g_air, E_low, ga, gb,
-    Aba, Bba, Bab, FWHM_Dop_ab, FWHM_Dop_bc
+    Labeled array containing columns wnum_ab, wnum_bc, S, A, g_air, E_low, ga,
+    gb, Aba, Bba, Bab, FWHM_Dop_ab, FWHM_Dop_bc
     '''
     # Extract parameters from HITRAN
     x = filterhitran(file)
 
     Na, Nb, Nc = extractN(x)
 
-    wnum_bc = calculateUV(Nc, x['wnum_ab'])
+    wnum_bc = calculateUV(Nc, x['wnum_ab'], x['E_low'])
     
     # Perform calculations using transition frequencies, Hz.
     vbc = atm.wavenum_to_Hz*wnum_bc
@@ -195,6 +204,9 @@ def processHITRAN(file):
     Bab = oh.b12(Aba, ga, gb, vab)
     
     # Remaining Einstein coefficients:
+    # Assuming same Acb regardless of b and c rotational level. Could do better
+    # looking at a dictionary of A values from HITRAN. Not a high priority to
+    # improve since not currently using UV calcs. TODO
     Bcb = oh.b21(oh.Acb, vbc)
     Bbc = oh.b12(oh.Acb, gb, oh.gc, vbc)
 
