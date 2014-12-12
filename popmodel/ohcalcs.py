@@ -17,6 +17,7 @@ import math as m
 import numpy as np
 from scipy.constants import k as kb
 from scipy.constants import c, N_A, pi, h
+import scipy.special
 
 #######################
 
@@ -246,6 +247,55 @@ def sat(bandwidth, beam, q=quenchb):
         # power is I * A * bandwidth
 
     return sat_power
+
+def voigt(xarr,amp,xcen,sigma,gamma,normalized=False):
+    """
+    Normalized Voigt profile from pyspeckit, on Github.
+
+    z = (x+i*gam)/(sig*sqrt(2))
+    V(x,sig,gam) = Re(w(z))/(sig*sqrt(2*pi))
+
+    The area of V in this definition is 1.
+    If normalized=False, then you can divide the integral of V by
+    sigma*sqrt(2*pi) to get the area.
+
+    Original implementation converted from
+    http://mail.scipy.org/pipermail/scipy-user/2011-January/028327.html
+    (had an incorrect normalization and strange treatment of the input
+    parameters)
+
+    Modified implementation taken from wikipedia, using the definition.
+    http://en.wikipedia.org/wiki/Voigt_profile
+
+    Parameters
+    ----------
+    xarr : np.ndarray
+    The X values over which to compute the Voigt profile
+    amp : float
+    Amplitude of the voigt profile
+    if normalized = True, amp is the AREA
+    xcen : float
+    The X-offset of the profile
+    sigma : float
+    The width / sigma parameter of the Gaussian distribution -- standard
+    deviation
+    gamma : float
+    The width / shape parameter of the Lorentzian distribution -- HWHM
+    normalized : bool
+    Determines whether "amp" refers to the area or the peak of the voigt
+    profile
+
+    Outputs
+    -------
+    V : np.ndarray
+    Voigt profile y values for xarr, either normalized or not.
+    """
+    z = ((xarr-xcen) + 1j*gamma) / (sigma * np.sqrt(2))
+    V = amp * np.real(scipy.special.wofz(z))
+    if normalized:
+        return V / (sigma*np.sqrt(2*np.pi))
+    else:
+        return V
 
 ################################
 

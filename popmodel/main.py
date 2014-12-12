@@ -2,32 +2,22 @@
 """
 Created on Mon Jul 14 10:49:58 2014
 
-@author: abirdsall
-"""
+@author: Adam Birdsall
 
-"""
 Kinetic model for two-photon OH LIF with focus on examining IR transition.
 
 Capabilities:
---Model population distribution across frequency space for v"=1 <-- v"=0
-transition.
---Model different options for sweeping IR laser freq over time
---Use loadHITRAN to extract parameters from HITRAN file
---Collect other physical and experimental parameters from ohcalcs
---Integrate ODE describing population in quantum states, modified from
-loadHITRAN module.
---Assume no properties change over feature width
--consider populations both within and without rotational level of interest.
--turn off UV laser calculations an option to save memory
 
---
-
-We don't expect velocities to be redistributed when bits of population are
-in the excited state, because correlation time for dilute gas has
-limit of infinity -- consequence of low density. But,
-there are still some collisions, hence collisional broadening...?
+- model population distribution across frequency space for v"=1 <-- v"=0
+- model different options for sweeping IR laser freq over time
+- use loadHITRAN to extract parameters from HITRAN file
+- collect other physical and experimental parameters from ohcalcs
+- integrate ODE describing population in quantum states
+- consider populations both within and without rotational level of interest.
+- turn off UV laser calculations an option to save memory
 
 """
+
 # modules within package
 import ohcalcs as oh
 import atmcalcs as atm
@@ -59,6 +49,7 @@ class Sweep(object):
         factor=.1,
         keepTsweep=False,
         keepwidth=False):
+
         # parameters that don't change after initiated
         self.ircen=0 # set center of swept ir
         self.stype=stype # allowed: 'saw' or 'sin'. Anything else forces laser
@@ -180,7 +171,7 @@ class Abs(object):
             abs_freq = np.arange(-abswidth/2,
                 abswidth/2+self.binwidth,
                 self.binwidth)
-            raw_pop=voigt(abs_freq,1,0,sigma,gamma,True)
+            raw_pop=oh.voigt(abs_freq,1,0,sigma,gamma,True)
             norm_factor = 1/np.sum(raw_pop)
             pop=raw_pop * norm_factor # makes sum of pops = 1.
             if pop[0]>=0.01*np.max(pop):
@@ -199,55 +190,6 @@ class Abs(object):
             .format(abswidth/1e6))
 
         # return np.array([abs_freq, pop])
-
-def voigt(xarr,amp,xcen,sigma,gamma,normalized=False):
-    """
-    Normalized Voigt profile from pyspeckit, on Github.
-
-    z = (x+i*gam)/(sig*sqrt(2))
-    V(x,sig,gam) = Re(w(z))/(sig*sqrt(2*pi))
-
-    The area of V in this definition is 1.
-    If normalized=False, then you can divide the integral of V by
-    sigma*sqrt(2*pi) to get the area.
-
-    Original implementation converted from
-    http://mail.scipy.org/pipermail/scipy-user/2011-January/028327.html
-    (had an incorrect normalization and strange treatment of the input
-    parameters)
-
-    Modified implementation taken from wikipedia, using the definition.
-    http://en.wikipedia.org/wiki/Voigt_profile
-
-    Parameters
-    ----------
-    xarr : np.ndarray
-    The X values over which to compute the Voigt profile
-    amp : float
-    Amplitude of the voigt profile
-    if normalized = True, amp is the AREA
-    xcen : float
-    The X-offset of the profile
-    sigma : float
-    The width / sigma parameter of the Gaussian distribution -- standard
-    deviation
-    gamma : float
-    The width / shape parameter of the Lorentzian distribution -- HWHM
-    normalized : bool
-    Determines whether "amp" refers to the area or the peak of the voigt
-    profile
-
-    Outputs
-    -------
-    V : np.ndarray
-    Voigt profile y values for xarr, either normalized or not.
-    """
-    z = ((xarr-xcen) + 1j*gamma) / (sigma * np.sqrt(2))
-    V = amp * np.real(scipy.special.wofz(z))
-    if normalized:
-        return V / (sigma*np.sqrt(2*np.pi))
-    else:
-        return V
 
 class KineticsRun(object):
     '''Entire model of OH population kinetics. Has single instance of Sweep
