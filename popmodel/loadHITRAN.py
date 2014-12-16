@@ -91,9 +91,10 @@ def filterhitran(file, Scutoff=1e-20, vabmin=3250, vabmax=3800):
     data_filter = data[np.logical_and(data['S']>=Scutoff, wavnuminrange)]
     return data_filter
 
-def extractNJ(x):
+def extractNJlabel(x):
     '''
-    Extract N and J quantum number info from HITRAN quantum state data for OH.
+    Extract N and J quantum number info from HITRAN quantum state data for OH,
+    and make string describing line.
 
     Determine Na from the spin and J values provided in HITRAN, where
     J = N + spin (spin = +/-1/2). Determine Nb from Na and the P/Q/R branch.
@@ -108,8 +109,9 @@ def extractNJ(x):
 
     OUTPUTS:
     --------
-    Na, Nb, Nc, Ja, Jb, Jc : ndarrays (6)
-    N and J quantum numbers for 'a', 'b', and 'c' states.
+    Na, Nb, Nc, Ja, Jb, Jc, label : ndarrays (7)
+    N and J quantum numbers for 'a', 'b', and 'c' states, and strings
+    identifying the b <-- a transitions.
     '''
     # shorthand for HITRAN entries of interest, in x
     lgq = x['lgq']
@@ -117,10 +119,11 @@ def extractNJ(x):
     ugq = x['ugq']
 
     # extract spin values: 3/2 denotes spin + 1/2, 1/2 denotes spin -1/2
-    spins = np.asarray([float(Fraction(entry[8:11])) for entry in lgq]) - 1
+    spinsa = np.asarray([float(Fraction(entry[8:11])) for entry in lgq]) - 1
+    spinsb = np.asarray([float(Fraction(entry[8:11])) for entry in ugq]) - 1
     # extract total angular momentum Ja
     Ja = np.asarray([float(entry[4:8]) for entry in llq])
-    Na = Ja - spins
+    Na = Ja - spinsa
 
     # extract b state N and J from provided branch values
     # OH has two Br values, for N and J, which differ only when spin states
@@ -128,16 +131,34 @@ def extractNJ(x):
     # state is X3/2 and upper is X1/2. This is only consistent with Q referring
     # to N and P referring to J, not vice versa.
     br_dict = {'O':-2, 'P':-1, 'Q':0, 'R':1, 'S':2}
-    br_N = np.asarray([br_dict[entry[1]] for entry in llq])
-    br_J = np.asarray([br_dict[entry[2]] for entry in llq])
+    br_N = np.vectorize(lambda y: y[1])(llq)
+    br_J = np.vectorize(lambda y: y[2])(llq)
+    br_N_value = np.asarray([br_dict[entry] for entry in br_N])
+    br_J_value = np.asarray([br_dict[entry] for entry in br_J])
 
-    Nb = Na + br_N    # N quantum number for b state
-    Jb = Ja + br_J    # J quantum number for b state
+    # Transition name. Uses nomenclature of Dieke and Crosswhite, J Quant
+    # Spectrosc Radiat Transfer 2, 97-199, 1961.
+    # index differentiates bewteen two components of doublet from electronic
+    # spin considerations: '1' means J = N+1/2, '2' means J = N-1/2, '12' means
+    # transition is between '1' (upper) & '2' (lower), and vice versa for '21'
+    index_dict = {'1':(spinsa == spinsb) & (spinsa == 0.5),
+            '2':(spinsa == spinsb) & (spinsa == -0.5),
+            '21':(spinsa != spinsb) & (spinsa == 0.5),
+            '12':(spinsa != spinsb) & (spinsa == -0.5)}
+    indexarray = np.empty_like(spinsa,dtype='str')
+    for label, entry in index_dict.iteritems():
+        indexarray[np.where(entry)]=label
+    # bring it all together into a single 'label' string per line
+    label = np.vectorize(lambda x,y,z:x+'_'+y+'('+z+')')(br_N,indexarray,
+            Na.astype('int').astype('str')) 
+
+    Nb = Na + br_N_value    # N quantum number for b state
+    Jb = Ja + br_J_value    # J quantum number for b state
 
     Nc = Nb - 1    # Assuming P branch transition is most efficient for c<--b.
     Jc = Jb - 1    # Assuming P branch transition is most efficient for c<--b.
 
-    return Na, Nb, Nc, Ja, Jb, Jc
+    return Na, Nb, Nc, Ja, Jb, Jc, label
 
 def calculateUV(Nc, wnum_ab, E_low):
     '''
@@ -186,13 +207,13 @@ def processHITRAN(file):
     --------
     alldata : ndarray
     Labeled array containing columns wnum_ab, wnum_bc, S, A, g_air, E_low, ga,
-    gb, Aba, Bba, Bab, FWHM_Dop_ab, FWHM_Dop_bc, qyield, branch, line, Na, Nb,
-    Nc, Ja, Jb, Jc
+    gb, Aba, Bba, Bab, FWHM_Dop_ab, FWHM_Dop_bc, qyield, Na, Nb, Nc, Ja, Jb,
+    Jc, label
     '''
     # Extract parameters from HITRAN
     x = filterhitran(file)
 
-    Na, Nb, Nc, Ja, Jb, Jc = extractNJ(x)
+    Na, Nb, Nc, Ja, Jb, Jc, label = extractNJlabel(x)
 
     wnum_bc = calculateUV(Nc, x['wnum_ab'], x['E_low'])
     
@@ -223,10 +244,6 @@ def processHITRAN(file):
     # Quantum yield:
     qyield = oh.Aca/(oh.Aca + Bcb*oh.Lbc + oh.Q*oh.kqc)
 
-    # Transition name:
-    branch = np.vectorize(lambda y: y[1:2])(x['llq'])
-    line = np.vectorize(lambda y: y[5:8])(x['llq'])
-
     arraylist = [x['wnum_ab'],
                 wnum_bc,
                 x['S'],
@@ -242,14 +259,13 @@ def processHITRAN(file):
                 FWHM_Dop_ab,
                 FWHM_Dop_bc,
                 qyield,
-                branch,
-                line,
                 Na,
                 Nb,
                 Nc,
                 Ja,
                 Jb,
                 Jc,
+                label
                 ]
 
     dtypelist = [('wnum_ab','float'),
@@ -267,14 +283,13 @@ def processHITRAN(file):
                 ('FWHM_Dop_ab', 'float'),
                 ('FWHM_Dop_bc', 'float'),
                 ('qyield', 'float'),
-                ('branch', '|S1'),
-                ('line', '|S3'),
                 ('Na','int'),
                 ('Nb','int'),
                 ('Nc','int'),
                 ('Ja','int'),
                 ('Jb','int'),
                 ('Jc','int'),
+                ('label',label.dtype)
                 ]
 
     alldata = np.rec.fromarrays(arraylist,dtype=dtypelist)
