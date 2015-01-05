@@ -240,9 +240,8 @@ class KineticsRun(object):
         # Collect info from HITRAN and extract:
         hpar = loadHITRAN.processHITRAN(file)
         self.hline = hpar[a] # single set of parameters from hpar
-        logging.info('addhitran: using {}({}) line at {:.4g} cm^-1'
-            .format(self.hline['branch'],self.hline['line'],
-                self.hline['wnum_ab']))
+        logging.info('addhitran: using {} line at {:.4g} cm^-1'
+            .format(self.hline['label'], self.hline['wnum_ab']))
 
     def makeAbs(self):
         # Make an absorption profile using HITRAN line self.hline
