@@ -205,7 +205,7 @@ def simline(hitline,xarr=None,press=oh.op_press,T=oh.temp):
     sigma_eff = popdens * sigma_tot * lineshape # Dorn et al, Eq 7
     return xarr,sigma_eff
 
-def simspec(hitlines):
+def simspec(hitlines,press=oh.op_press,T=oh.temp):
     '''combine set of hitlines into a spectrum
     
     Calls simline function for each 'line' entry in input, passing an 'xarr' of
@@ -234,5 +234,5 @@ def simspec(hitlines):
     # make ndarray for resulting absorprtion cross section spectra
     sigma_eff_array = np.empty([hitlines.size,xarr.size])
     for index, line in enumerate(hitlines):
-        freq,sigma_eff_array[index]=simline(line,xarr)
+        freq,sigma_eff_array[index]=simline(line,xarr,press,T)
     return xarr,sigma_eff_array

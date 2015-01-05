@@ -138,7 +138,7 @@ def extractNJlabel(x):
 
     # Transition name. Uses nomenclature of Dieke and Crosswhite, J Quant
     # Spectrosc Radiat Transfer 2, 97-199, 1961.
-    # index differentiates bewteen two components of doublet from electronic
+    # index differentiates between two components of doublet from electronic
     # spin considerations: '1' means J = N+1/2, '2' means J = N-1/2, '12' means
     # transition is between '1' (upper) & '2' (lower), and vice versa for '21'
     index_dict = {'1':(spinsa == spinsb) & (spinsa == 0.5),
