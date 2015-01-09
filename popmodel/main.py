@@ -57,7 +57,7 @@ class Sweep(object):
         # didn't bother to turn off alignBins -- some meaningless variables.
         self.binwidth=binwidth # Hz, have been using 1 MHz
 
-        # Sweep width and time -- alignBins can later reduce
+        # initial sweep width and time -- alignBins can later reduce
         self.width=width # Hz
         self.tsweep=tsweep # s
         # max is 500 MHz for OPO cavity sweep, 100 GHz for seed sweep
@@ -134,14 +134,23 @@ class Sweep(object):
             of feature\'s total population'.format(self.part_swept))
 
 class Abs(object):
-    '''absorbance line profile, consisting of two 1D arrays:
-    abs_freq : bins of frequencies
+    '''absorbance line profile, initially defined in __init__ by a center 
+    wavenumber `wnum` and a `binwidth`. Calling self.makeProfile then generates
+    two 1D arrays:
+
+    abs_freq : bins of frequencies (Hz)
     pop : relative population absorbing in each frequency bin
+
+    pop is generated from abs_freq and the Voigt profile maker ohcalcs.voigt,
+    which requires parameters that are passed through as makeProfile arguments
+    (default are static parameters in ohcalcs). The formation of the two arrays
+    is iterative, widening the abs_freq range by 50% until the edges of the pop
+    array have less than 1% of the center.
     '''
     def __init__(self,wnum,binwidth=1.e6):
         self.wnum=wnum # cm^-1
         self.freq=wnum*c*100 # Hz
-        self.binwidth=binwidth
+        self.binwidth=binwidth # Hz
        
     def __str__(self):
         return 'Absorbance feature centered at '+str(self.wnum)+' cm^-1'
@@ -149,15 +158,27 @@ class Abs(object):
     def makeProfile(self,abswidth=1000.e6,press=oh.op_press,T=oh.temp,
         g_air=oh.g_air,mass=oh.mass):
         '''
-        Use voigt func to create IR profile we want.
+        Use oh.voigt func to create IR profile as self.abs_freq and self.pop.
     
         Parameters:
         -----------
+        abswidth : float
+        Minimum width of profile, Hz. Starting value that then expands if this
+        does not capture 'enough' of the profile (defined as <1% of peak height
+        at edges).
+
         press : float
         Operating pressure, torr. Defaults to ohcalcs value
     
-        temp : float
+        T : float
         Temperature. Defaults to ohcalcs value
+
+        g_air : float
+        Air-broadening coefficient provided in HITRAN files, cm^-1 atm^-1.
+        Defaults to ohcalcs value.
+
+        mass : float
+        Mass of molecule of interest, kg. Defaults to ohcalcs value
         '''
         sigma=(kb*T / (mass*c**2))**(0.5)*self.freq # Gaussian std dev
     
@@ -237,14 +258,25 @@ class KineticsRun(object):
         self.lumpsolve = lumpsolve
         
     def addhitran(self,file,a):
-        # Collect info from HITRAN and extract:
+        '''Process HITRAN file and save a single line to self.hline.
+
+        Parameters
+        ----------
+        file : str
+        Path to hitran file (e.g., "13_hit12.par")
+
+        a : int
+        Line of processed hitran array to choose.
+        '''
         hpar = loadHITRAN.processHITRAN(file)
         self.hline = hpar[a] # single set of parameters from hpar
         logging.info('addhitran: using {} line at {:.4g} cm^-1'
             .format(self.hline['label'], self.hline['wnum_ab']))
 
     def makeAbs(self):
-        # Make an absorption profile using HITRAN line self.hline
+        '''Make an absorption profile using self.hline and experimental
+        parameters.
+        '''
         # Set up IR b<--a absorption profile
         self.abfeat = Abs(wnum=self.hline['wnum_ab'])
         self.abfeat.makeProfile(press=self.press,
@@ -252,11 +284,10 @@ class KineticsRun(object):
                                 g_air=self.hline['g_air'])
 
     def solveode(self, file='13_hit12.par', a=24, intperiods=2.1,
-        avg_step_in_bin=20.):
+            avg_step_in_bin=20.):
         '''Integrate ode describing two-photon LIF.
 
-        Uses master equation (no Jacobian) and all relevant parameters. Uses
-        ohcalcs and atmcalcs modules.
+        Use master equation (no Jacobian) and all relevant parameters.
         
         Define global parameters that are independent of HITRAN OH IR data
         within function: Additional OH parameters related to 'c' state and
@@ -266,16 +297,25 @@ class KineticsRun(object):
         Parameters:
         -----------
         file : str
-        Input HITRAN file (160-char format).
+        Input HITRAN file path (160-char format). Default assumes file is in
+        current directory with default HITRAN OH filename
         
         a : int
-        index of transition to use, within 'file'. a=24 gives Q1(1) line in
-        '13_hit12.par'
+        index of transition to use, within processed HITRAN data file. a=24
+        gives Q1(1) line in '13_hit12.par'
+
+        intperiods : float
+        Number of periods of the Sweep to integrate over.
+
+        avg_step_in_bin : float
+        Average number of integration steps to spend in each frequency bin as
+        laser sweeps over frequencies. Default of 20 is conservative, keeps in
+        mind that time in each bin is variable when sweep is sinusoidal.
 
         Outputs:
         --------
         N : ndarray
-        Relative population of 'a', 'b' and 'c' states over integration time.    
+        Relative population of 'a', 'b' (and 'c') states over integration time.    
         '''
         logging.info('solveode: integrating at {} torr, {} K, OH in cell \
             {:.2g} cm^-3'.format(self.press,self.temp,self.ohtot))
@@ -386,14 +426,41 @@ class KineticsRun(object):
         logging.info('solveode: done with integration')
 
     def makeNlump(self,N):
+        '''Try to make solveode more efficient by lumping together all N that
+        the laser sweeps over, apart from the current bin. Developmental.
+
+        Parameters
+        ----------
+        N : ndarray
+        2D array as constructed in solveode that stores population across the
+        absorption profile and in each energy level, at a single timestep.
+
+        Outputs
+        -------
+        out : ndarray
+        2D array that lumps together all population that the laser sweeps over,
+        apart from the current laser bin, in the ground state.
+        '''
         out=np.zeros((self.nlevels,4))
         out[0,0]=N[0,self.laspos()]
         out[0,1]=np.sum(N[0,:])-out[0,0]
         out[0,-2:]=N[0,-2:] # same values outside laser sweep, other rot
+        # need to do anything with upper states? as written, they're all 0
         return out
 
     def laspos(self):
-        '''determine position of IR laser'''
+        '''Determine position of IR laser at current integration time.
+        
+        Function of state of self.time_progress, self.sweepfunc and
+        self.sweep.las_bins. Only self.time_progress should change over the
+        course of an integration in solveode.
+
+        Outputs
+        -------
+        voigt_pos : int
+        Index of self.sweep.las_bins for the frequency that the sweeping laser
+        is currently tuned to.
+        '''
         voigt_pos = self.sweepfunc[self.time_progress]
         num_las_bins=np.size(self.sweep.las_bins)
         num_int_bins=num_las_bins+2
@@ -408,8 +475,17 @@ class KineticsRun(object):
         -----------
         t : float
         Time
-        y: ??
-        1D-array
+        y: ndarray
+        1D-array describing the population in each bin in each energy level.
+        ODE solver requires this to be a 1D-array, so pass in list(arr.ravel())
+        where `arr` is the multidimensional array. Within dN, this
+        multidimensional array is reconstructed and then flattened again at the
+        end.
+
+        Outputs
+        -------
+        result : ndarray
+        1D-array describing dN in all 'a' states, then 'b', ...
         '''
 
         # Define parameters from OH literature
@@ -559,15 +635,21 @@ class KineticsRun(object):
             return result
 
         
-    def plotpops(self,
-        title='Relative population in v\"=1, N\"=1, J\"=1.5',
-        yl='Fraction of total OH'):
+    def plotpops(self, title='Relative population in v\"=1, N\"=1, J\"=1.5',
+            yl='Fraction of total OH'):
         '''Given solution N to solveode, plot 'b' state population over time.
 
         Requires:
         -either 'abcpop' or 'N' (to make 'abcpop') from solveode input
         -to make 'abcpop' from 'N', need tbins, nlevels
 
+        Parameters
+        ----------
+        title : str
+        Title to display at top of plot.
+
+        yl : str
+        Y-axis label to display.
         '''
         if hasattr(self,'abcpop')==False and hasattr(self,'N')==False:
             logging.warning('need to run solveode first!')
@@ -580,7 +662,19 @@ class KineticsRun(object):
         self.plotvslaser(self.abcpop[:,1,0]/self.ohtot,title,yl)
 
     def plotvslaser(self,func,title='plot',yl='y axis'):
-        '''make arbitrary plot in time w laser sweep as second plot'''
+        '''Make arbitrary plot in time with laser sweep as second plot
+        
+        Parameters
+        ----------
+        func : ndarray
+        1D set of values that is function of self.tbins
+
+        title : str
+        Title to display on top of plot
+
+        yl : str
+        Y-axis label to display.
+        '''
         if hasattr(self,'abcpop')==False and hasattr(self,'N')==False:
             logging.warning('need to run solveode first!')
             return
@@ -604,7 +698,17 @@ class KineticsRun(object):
         plt.show()    
 
     def plotfeature(self,laslines=True):
-        ''''''
+        '''Plot the calculated absorption feature in frequency space
+        
+        Requires KineticsRun instance with an Abs that makeProfile has been run
+        on (i.e., have self.abfeat.abs_freq and self.abfeat.pop)
+
+        Parameters
+        ----------
+        laslines : Bool
+        Whether to plot the edges of where the laser sweeps. Requires the
+        KineticsRun instance to have a Sweep with self.sweep.las_bins array.
+        '''
         fig, (ax0) = plt.subplots(nrows=1)
         ax0.plot(self.abfeat.abs_freq/1e6,self.abfeat.pop)
         ax0.set_title('Calculated absorption feature, ' \
@@ -618,7 +722,16 @@ class KineticsRun(object):
         plt.show()
 
     def saveOutput(self,file):
-        ''''''
+        '''Save result of solveode to npz file.
+        
+        Saves arrays describing the population over time, laser bins, tbins,
+        sweepfunc, absorption frequencies, and Voigt profile.
+        
+        Parameters
+        ----------
+        file : str
+        Path of file to save output (.npz extension standard).
+        '''
         np.savez(file,
             abcpop=self.abcpop,
             las_bins=self.sweep.las_bins,
@@ -628,6 +741,16 @@ class KineticsRun(object):
             pop=self.abfeat.pop)
 
     def loadOutput(self,file):
+        '''Populate KineticsRun instance with results saved to npz file.
+
+        Writes to values for abcpop, sweep.las_bins, tbins, sweepfunc, abfeat,
+        abfeat.abs_freq and abfeat.pop.
+
+        Parameters
+        ----------
+        file : str
+        Path of npz file with saved output.
+        '''
         with np.load(file) as data:
             self.abcpop=data['abcpop']
             self.sweep.las_bins=data['las_bins']
@@ -640,6 +763,15 @@ class KineticsRun(object):
 # Simple batch scripts
 
 def pressdepen(file):
+    '''Run solveode over range of pressures.
+
+    Default solveode run, all output just printed with logging.info.
+
+    Parameters
+    ----------
+    file : str
+    Path to HITRAN file containing data.
+    '''
     i=1
     pressconsidered=(2,10,100,760)
     for press in pressconsidered:
@@ -656,6 +788,15 @@ def pressdepen(file):
         i+=1
 
 def sweepdepen(file):
+    '''Run solveode over range of sweep widths.
+
+    Default solveode run, all output just printed with logging.info.
+
+    Parameters
+    ----------
+    file : str
+    Path to HITRAN file containing data.
+    '''
     for factor in (0.01, 0.1, 0.5, 0.9):
         k=KineticsRun(stype='sin')
         k.sweep.factor=factor
