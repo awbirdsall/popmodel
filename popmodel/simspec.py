@@ -7,15 +7,15 @@ import loadHITRAN as loadHITRAN
 # other modules
 import numpy as np
 import scipy.special
+import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.constants import k
 from scipy.constants import c, N_A, pi
-from scipy.integrate import ode
 from math import floor
 import logging
 import ConfigParser
 logging.basicConfig(level=logging.INFO)
-import pandas as pd
+import csv
 
 def dornvoigt(wc, wd, wnum):
     '''use Eq 13 in Dorn et al. to calculate voigt profile
@@ -153,11 +153,9 @@ def simline(hitline,xarr=None,press=oh.op_press,T=oh.temp):
 
     Outputs
     -------
-    xarr : ndarray
-    1D array of frequency values used to create spectrum, Hz. Only really
-    helpful if xarr isn't passed to the function to begin wtih.
-    sigma_eff : ndarray
-    Effective absorption cross section values over xarr, cm^2.
+    lineseries : pd.Series
+    Index of frequency values used to create spectrum, Hz. Values of effective
+    absorption cross section values, cm^2.
     '''
     # extract values from hitline
     E_low = hitline['E_low']*1.986455684e-23 # lower-state E, J (from cm^-1)
@@ -203,16 +201,20 @@ def simline(hitline,xarr=None,press=oh.op_press,T=oh.temp):
     # effective cross-section depends on population in lower state,
     # 'total' integrated cross-section, and lineshape (Voigt)
     sigma_eff = popdens * sigma_tot * lineshape # Dorn et al, Eq 7
-    return xarr,sigma_eff
+    lineseries = pd.Series(sigma_eff, index=xarr)
+    lineseries.index.name = "Frequency, Hz"
+    return lineseries
 
 def simspec(hitlines,press=oh.op_press,T=oh.temp):
-    '''combine set of hitlines into a spectrum
-    
-    Calls simline function for each 'line' entry in input, passing an 'xarr' of
-    frequency values to cover all the lines. Dreadfully inefficient as stands
-    for a sparse spectrum, since it calculates and stores the full xarr range
-    for each line, most of which is essentially zero.
-    
+    '''Combine set of hitlines into spectrum as pandas DataFrame
+
+    Call `simline` for each entry in input, without specifying frequency range
+    over which to calculate absorption feature. Bundles up each pair of
+    frequency values and absorption cross sections returned by `simline` into
+    one pandas DataFrame object, which is returned. The DataFrame index is
+    a combination of all frequency values used for all the lines, but the
+    DataFrame is very sparse, saving on memory.
+
     Parameters
     ----------
     hitlines : ndarray
@@ -222,17 +224,41 @@ def simspec(hitlines,press=oh.op_press,T=oh.temp):
     -------
     xarr : ndarray
     1D array of frequency values the spectrum was calculated over, Hz
-    sigma_eff_array
+    sigma_eff_array : ndarray
     2D array of effective absorption cross-section values across xarr for each
     line in hitlines, cm^2
     '''
-    # make unified x values to cover range around all center frequencies
-    width = 400e6
-    mincenterfreq = np.min(hitlines['wnum_ab'])*c*100 # Hz
-    maxcenterfreq = np.max(hitlines['wnum_ab'])*c*100 # Hz
-    xarr = np.linspace(mincenterfreq-width, maxcenterfreq+width, 1.e6)
-    # make ndarray for resulting absorprtion cross section spectra
-    sigma_eff_array = np.empty([hitlines.size,xarr.size])
-    for index, line in enumerate(hitlines):
-        freq,sigma_eff_array[index]=simline(line,xarr,press,T)
-    return xarr,sigma_eff_array
+    linedict = {}
+    for line in hitlines:
+        linedict.update({line.label:simline(line,None,press,T)})
+    specdata = pd.DataFrame(linedict)
+    return specdata
+
+def specToCSV(csvfile,specdata):
+    '''write given specdata DataFrame to a csv file
+
+    Parameters:
+    -----------
+    csvfile : str
+    Desired filename/path of csv output
+
+    specdata : DataFrame
+    DataFrame containing spectrum
+    '''
+    specdata.to_csv(csvfile)
+
+def csvToSpec(csvfile):
+    '''Return data saved to a CSV file as a DataFrame.
+
+    Parameters
+    ----------
+    csvfile : str
+    Filename/path of csv input
+
+    Outputs
+    -------
+    specdata : pd.DataFrame
+    DataFrame containing spectrum
+    '''
+    specdata = pd.read_csv(csvfile, index_col=0)
+    return specdata
