@@ -124,6 +124,9 @@ def extractNJlabel(x):
     # extract total angular momentum Ja
     Ja = np.asarray([float(entry[4:8]) for entry in llq])
     Na = Ja - spinsa
+    
+    # extract splitting info
+    efsplit = np.asarray([entry[8:10] for entry in llq])
 
     # extract b state N and J from provided branch values
     # OH has two Br values, for N and J, which differ only when spin states
@@ -149,8 +152,8 @@ def extractNJlabel(x):
     for label, entry in index_dict.iteritems():
         indexarray[np.where(entry)]=label
     # bring it all together into a single 'label' string per line
-    label = np.vectorize(lambda x,y,z:x+'_'+y+'('+z+')')(br_N,indexarray,
-            Na.astype('int').astype('str')) 
+    label = np.vectorize(lambda x,y,z,w:x+'_'+y+'('+z+')'+w)(br_N,indexarray,
+            Na.astype('int').astype('str'),efsplit) 
 
     Nb = Na + br_N_value    # N quantum number for b state
     Jb = Ja + br_J_value    # J quantum number for b state
