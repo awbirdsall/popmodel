@@ -177,9 +177,12 @@ def simline(hitline,xarr=None,press=oh.op_press,T=oh.temp):
     gamma=(g_air*c*100) * press/760. # Lorentzian parameter
 
     # come up with xarr values if none passed to function
-    width = 400e6
     if xarr == None:
-        xarr = np.linspace(freq-width,freq+width,1.e3)
+        wc = gamma # lorentzian half-width
+        wd = sigma * np.sqrt(2*np.log(2)) # doppler half-width, Wikipedia
+        wv = wc/2+np.sqrt(wc**2/4+wd**2) # voigt hw approx of Whiting 1968
+        width = 40 * wv # 40 of the approximate half-widths
+        xarr = np.linspace(freq-width,freq+width,1.e3) # hard-code 1000 points
 
     lineshape = oh.voigt(xarr,1.,freq,sigma,gamma,True)
 
@@ -202,18 +205,24 @@ def simline(hitline,xarr=None,press=oh.op_press,T=oh.temp):
     # 'total' integrated cross-section, and lineshape (Voigt)
     sigma_eff = popdens * sigma_tot * lineshape # Dorn et al, Eq 7
     lineseries = pd.Series(sigma_eff, index=xarr)
+    # cut off first and last entry to zero to avoid interpolation error later
+    lineseries.iloc[0]=0
+    lineseries.iloc[-1]=0
     lineseries.index.name = "Frequency, Hz"
     return lineseries
 
 def simspec(hitlines,press=oh.op_press,T=oh.temp):
-    '''Combine set of hitlines into spectrum as pandas DataFrame
+    '''Combine set of hitlines into spectrum as pandas DataFrame.
 
     Call `simline` for each entry in input, without specifying frequency range
     over which to calculate absorption feature. Bundles up each pair of
     frequency values and absorption cross sections returned by `simline` into
-    one pandas DataFrame object, which is returned. The DataFrame index is
-    a combination of all frequency values used for all the lines, but the
-    DataFrame is very sparse, saving on memory.
+    one pandas DataFrame object. Interpolate up to 5 consecutive NaN values in
+    each line, which can arise from overlapping lines. Then return the
+    DataFrame.
+    
+    The DataFrame index is a combination of all frequency values used for all
+    the lines, but the DataFrame is very sparse, saving on memory.
 
     Parameters
     ----------
@@ -232,6 +241,7 @@ def simspec(hitlines,press=oh.op_press,T=oh.temp):
     for line in hitlines:
         linedict.update({line.label:simline(line,None,press,T)})
     specdata = pd.DataFrame(linedict)
+    specdata.interpolate(method='linear', limit=5, inplace=True)
     return specdata
 
 def specToCSV(csvfile,specdata):
