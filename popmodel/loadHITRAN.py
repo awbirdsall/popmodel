@@ -16,7 +16,7 @@ from fractions import Fraction
 
 def importhitran(file, columns=None):
     '''
-    Extract complete set of data from HITRAN-type data file.
+    Extract complete set of data from HITRAN-type par file.
     
     All HITRAN molecules have the same fixed-character fields here.
     
@@ -64,7 +64,7 @@ def importhitran(file, columns=None):
 
 def filterhitran(file, Scutoff=1e-20, vabmin=3250, vabmax=3800):
     '''
-    Filter lines from HITRAN-type data file based on intensity and wavenumbers
+    Filter lines from HITRAN-type par file by intensity and wavenumber.
 
     Only return subset of fields for each line that are needed elsewhere.
     
@@ -96,7 +96,8 @@ def filterhitran(file, Scutoff=1e-20, vabmin=3250, vabmax=3800):
     return data_filter
 
 def extractNJlabel_h2o(x):
-    '''Extract N and J quantum number info from HITRAN
+    '''
+    Extract J quantum number info and unique label from HITRAN for H2O.
 
     For global quanta, H2O is "class 6": non-linear triatomic, with three
     vibrational modes Global quanta have final 6 characters for quanta in the
@@ -106,6 +107,20 @@ def extractNJlabel_h2o(x):
     J (total angular momentum, without nuclear spin), three for Ka, three for
     Kc, five for F (total angular momentum, including nuclear spin), one for
     Sym.
+
+    Label is in form "[Ja]_[Jb]_[wnum]". Including wnum ensures unique labels.
+
+    PARAMETERS:
+    -----------
+    x : ndarray
+    Must contain HITRAN (140-char format) information about quantum states, as
+    processed by importhitran.
+
+    OUTPUTS:
+    --------
+    Ja, Jb, label : ndarrays (3)
+    J quantum numbers for 'a' and 'b' states, and strings identifying the b <--
+    a transitions.
     '''
     llq = x['llq']
     ulq = x['ulq']
@@ -120,8 +135,7 @@ def extractNJlabel_h2o(x):
 
 def extractNJlabel(x):
     '''
-    Extract N and J quantum number info from HITRAN quantum state data and make
-    string describing line.
+    Extract N and J quantum number and unique label from HITRAN for OH.
 
     Determine Na from the spin and J values provided in HITRAN, where
     J = N + spin (spin = +/-1/2). Determine Nb from Na and the P/Q/R branch.
@@ -140,6 +154,9 @@ def extractNJlabel(x):
     N and J quantum numbers for 'a', 'b', and 'c' states, and strings
     identifying the b <-- a transitions.
     '''
+    # TODO: refactor so direct HITRAN extraction is separate from calculations
+    # involving third state for TP LIF.
+
     # shorthand for HITRAN entries of interest, in x
     lgq = x['lgq']
     llq = x['llq']
@@ -193,6 +210,7 @@ def extractNJlabel(x):
 def calculateUV(Nc, wnum_ab, E_low):
     '''
     Calculate c<--b transition wavenumber, accounting for rotational states.
+
     Fails if Nc>4, so need to filter out high N transitions from HITRAN first
     -- intensity cutoff should be fine.
 
@@ -222,8 +240,9 @@ def calculateUV(Nc, wnum_ab, E_low):
 
 def processHITRAN(file, Scutoff=1e-20, vabmin=3250, vabmax=3800):
     '''
-    Extract parameters needed for IR-UV LIF kinetics modeling from HITRAN
-    file: N quantum numbers, UV energies, Einstein coefficients, Doppler
+    Extract parameters needed for IR-UV LIF kinetics modeling from HITRAN file.
+    
+    Extract N quantum numbers, UV energies, Einstein coefficients, Doppler
     broadening, quenching rate constants, beam parameters.
     
     Use functions and parameters in 'atmcalcs' and 'ohcalcs' modules.
@@ -295,6 +314,7 @@ def processHITRAN(file, Scutoff=1e-20, vabmin=3250, vabmax=3800):
     else:
         print "Unsupported molecule type"
         return
+
     arraylist = [x['wnum_ab'],
                 wnum_bc,
                 x['S'],
