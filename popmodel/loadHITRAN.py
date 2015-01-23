@@ -16,9 +16,12 @@ from fractions import Fraction
 
 def importhitran(file, columns=None):
     '''
-    Extract complete set of data from HITRAN-type data file. Because each
-    column has a different data type, the resulting array is 1D, with each
-    entry consisting of all the entries for a specific feature.
+    Extract complete set of data from HITRAN-type data file.
+    
+    All HITRAN molecules have the same fixed-character fields here.
+    
+    Because each column has a different data type, the resulting array is 1D,
+    with each entry consisting of all the entries for a specific feature.
     
     PARAMETERS:
     -----------
@@ -36,7 +39,7 @@ def importhitran(file, columns=None):
     data = np.genfromtxt(file,
                         delimiter = (2, 1, 12, 10, 10, 5, 5, 10, 4, 8, 15, 15,
                                      15, 15, 6, 12, 1, 7, 7),
-                        dtype=[('molec id', '<i4'),
+                        dtype=[('molec_id', '<i4'),
                         ('isotop', '<i4'),
                         ('wnum_ab', '<f8'),
                         ('S', '<f8'), 
@@ -61,8 +64,9 @@ def importhitran(file, columns=None):
 
 def filterhitran(file, Scutoff=1e-20, vabmin=3250, vabmax=3800):
     '''
-    Extract select subset of data from HITRAN-type data file, based on cutoff
-    intensity and range of wave numbers.
+    Filter lines from HITRAN-type data file based on intensity and wavenumbers
+
+    Only return subset of fields for each line that are needed elsewhere.
     
     PARAMETERS:
     -----------
@@ -81,20 +85,43 @@ def filterhitran(file, Scutoff=1e-20, vabmin=3250, vabmax=3800):
     OUTPUTS:
     --------
     data_filter : ndarray
-    Labeled array containing columns wnum_ab, S, A, g_air, E_low, ugq, lgq,
-    ulq, llq, g_up, g_low.
+    Labeled array containing columns molec_id, wnum_ab, S, A, g_air, E_low,
+    ugq, lgq, ulq, llq, g_up, g_low.
     '''
-    data = importhitran(file, (2, 3, 4, 5, 7, 10, 11, 12, 13, 17, 18))
+    data = importhitran(file, (0, 2, 3, 4, 5, 7, 10, 11, 12, 13, 17, 18))
 
     wavnuminrange = np.logical_and(data['wnum_ab']>=vabmin,
             data['wnum_ab']<=vabmax)
     data_filter = data[np.logical_and(data['S']>=Scutoff, wavnuminrange)]
     return data_filter
 
+def extractNJlabel_h2o(x):
+    '''Extract N and J quantum number info from HITRAN
+
+    For global quanta, H2O is "class 6": non-linear triatomic, with three
+    vibrational modes Global quanta have final 6 characters for quanta in the
+    three vibrational modes.
+
+    For local quanta, H2O is "group 1": asymmetric rotors. Three characters for
+    J (total angular momentum, without nuclear spin), three for Ka, three for
+    Kc, five for F (total angular momentum, including nuclear spin), one for
+    Sym.
+    '''
+    llq = x['llq']
+    ulq = x['ulq']
+
+    Ja = np.asarray([float(entry[:3]) for entry in llq])
+    Jb = np.asarray([float(entry[3:6]) for entry in ulq])
+
+    label = np.vectorize(lambda x,y,z:x+'_'+y+'_'+z) \
+            (Ja.astype('int').astype('str'),Jb.astype('int').astype('str'), \
+            x['wnum_ab'].astype('str')) 
+    return Ja, Jb, label
+
 def extractNJlabel(x):
     '''
-    Extract N and J quantum number info from HITRAN quantum state data for OH,
-    and make string describing line.
+    Extract N and J quantum number info from HITRAN quantum state data and make
+    string describing line.
 
     Determine Na from the spin and J values provided in HITRAN, where
     J = N + spin (spin = +/-1/2). Determine Nb from Na and the P/Q/R branch.
@@ -193,7 +220,7 @@ def calculateUV(Nc, wnum_ab, E_low):
     wnum_bc = E_c - wnum_ab - E_low
     return wnum_bc
 
-def processHITRAN(file):
+def processHITRAN(file, Scutoff=1e-20, vabmin=3250, vabmax=3800):
     '''
     Extract parameters needed for IR-UV LIF kinetics modeling from HITRAN
     file: N quantum numbers, UV energies, Einstein coefficients, Doppler
@@ -206,6 +233,15 @@ def processHITRAN(file):
     file : str
     Input HITRAN file (160-char format).
     
+    Scutoff : float
+    Minimum absorbance intensity cutoff, HITRAN units.
+
+    vabmin : float
+    Low end of desired wavenumber range, cm^-1.
+
+    vabmax : float
+    High end of desired wavenumber range, cm^-1.
+
     Outputs:
     --------
     alldata : ndarray
@@ -214,16 +250,11 @@ def processHITRAN(file):
     Jc, label
     '''
     # Extract parameters from HITRAN
-    x = filterhitran(file)
+    x = filterhitran(file, Scutoff, vabmin, vabmax)
 
-    Na, Nb, Nc, Ja, Jb, Jc, label = extractNJlabel(x)
-
-    wnum_bc = calculateUV(Nc, x['wnum_ab'], x['E_low'])
-    
-    # Perform calculations using transition frequencies, Hz.
-    vbc = atm.wavenum_to_Hz*wnum_bc
+    # values that should work for all molecule types
     vab = atm.wavenum_to_Hz*x['wnum_ab']
-
+    
     # Extract and calculate Einstein coefficients. See ohcalcs.py for details
     # on convention used for calculating B coefficients.
     Aba = x['A']
@@ -232,21 +263,38 @@ def processHITRAN(file):
 
     Bba = oh.b21(Aba, vab)
     Bab = oh.b12(Aba, ga, gb, vab)
-    
-    # Remaining Einstein coefficients:
-    # Assuming same Acb regardless of b and c rotational level. Could do better
-    # looking at a dictionary of A values from HITRAN. Not a high priority to
-    # improve since not currently using UV calcs. TODO
-    Bcb = oh.b21(oh.Acb, vbc)
-    Bbc = oh.b12(oh.Acb, gb, oh.gc, vbc)
 
-    # Collision broadening:
-    FWHM_Dop_ab = oh.fwhm_doppler(vab, oh.temp, oh.mass)
-    FWHM_Dop_bc = oh.fwhm_doppler(vbc, oh.temp, oh.mass)
+    if x['molec_id'][0] == 13: # OH
+        Na, Nb, Nc, Ja, Jb, Jc, label = extractNJlabel(x)
 
-    # Quantum yield:
-    qyield = oh.Aca/(oh.Aca + Bcb*oh.Lbc + oh.Q*oh.kqc)
+        wnum_bc = calculateUV(Nc, x['wnum_ab'], x['E_low'])
+        
+        # Perform calculations using transition frequencies, Hz.
+        vbc = atm.wavenum_to_Hz*wnum_bc
+        
+        # Remaining Einstein coefficients:
+        # Assuming same Acb regardless of b and c rotational level. Could do better
+        # looking at a dictionary of A values from HITRAN. Not a high priority to
+        # improve since not currently using UV calcs. TODO
+        Bcb = oh.b21(oh.Acb, vbc)
+        Bbc = oh.b12(oh.Acb, gb, oh.gc, vbc)
 
+        # Collision broadening:
+        FWHM_Dop_ab = oh.fwhm_doppler(vab, oh.temp, oh.mass)
+        FWHM_Dop_bc = oh.fwhm_doppler(vbc, oh.temp, oh.mass)
+
+        # Quantum yield:
+        qyield = oh.Aca/(oh.Aca + Bcb*oh.Lbc + oh.Q*oh.kqc)
+
+    elif x['molec_id'][0] == 1:  # H2O
+        Ja, Jb, label = extractNJlabel_h2o(x)
+        # just make everything else -1s
+        Na, Nb, Nc, Jc, wnum_bc, vbc, Bcb, Bbc, FWHM_Dop_ab, \
+            FWHM_Dop_bc, qyield = [np.ones_like(x['A'])*(-1)]*11
+
+    else:
+        print "Unsupported molecule type"
+        return
     arraylist = [x['wnum_ab'],
                 wnum_bc,
                 x['S'],
