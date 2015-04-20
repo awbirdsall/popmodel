@@ -92,17 +92,33 @@ class Sweep(object):
         '''
         if self.keepwidth==False:
             # use absorption feature and cutoff factor to determine sweep size
-            start = np.where(abfeat.pop>self.factor*np.max(abfeat.pop))[0][0]
-            end = np.where(abfeat.pop>self.factor*np.max(abfeat.pop))[0][-1]
-            abswidth = abfeat.abs_freq[end]-abfeat.abs_freq[start]
-            if abswidth > self.width: # keep sweep.width at max
+            threshold = self.factor * np.max(abfeat.pop)
+            abovecutoff = np.where(abfeat.pop > threshold)
+            # start and end are indices defining the range of abfeat.abs_freq
+            # to sweep over. abswidth is the size of the frequency range from
+            # start to end.
+
+            # use if...else to handle nonempty/empty abovecutoff result
+            if np.size(abovecutoff) > 0:
+                start =  abovecutoff[0][0]
+                end = abovecutoff[0][-1]
+                abswidth = abfeat.abs_freq[end]-abfeat.abs_freq[start]
+            else:
+                start = np.argmax(abfeat.pop)
+                end = start + 1
+                abswidth = self.binwidth
+
+            # Default self.width defined in __init__ represents a physical cap
+            # to the allowed dithering range. Only reduce self.width if the
+            # frequency width obtained using the cutoff is less than that:
+            if abswidth > self.width: # keep self.width maximized
                 logging.info('alignBins: IR sweep width maximized: {:.2g} MHz'
                     .format(self.width/1e6))
                 abmid = floor(np.size(abfeat.abs_freq)/2.)
                 irfw=self.width/self.binwidth
                 self.las_bins=abfeat.abs_freq[abmid-irfw/2:abmid+irfw/2]
                 abfeat.intpop=abfeat.pop[abmid-irfw/2:abmid+irfw/2]
-            else: # reduce self.width
+            else: # reduce self.width to abswidth
                 fullwidth=self.width
                 if self.keepTsweep==False: # scale tsweep by width reduction
                     self.tsweep=self.tsweep*abswidth/fullwidth 
@@ -213,9 +229,12 @@ class Abs(object):
         # return np.array([abs_freq, pop])
 
 class KineticsRun(object):
-    '''Entire model of OH population kinetics. Has single instance of Sweep
-    and of Abs. Sweep is made in __init__, while Abs is made after the HITRAN
-    file is imported and the absorption feature selected.'''
+    '''Full model of OH population kinetics: laser, feature and populations.
+    
+    Has single instance of Sweep, describing laser dithering, and of Abs,
+    describing absorption feature. Sweep is made in __init__, while Abs is made
+    after the HITRAN file is imported and the absorption feature selected.
+    '''
     def __init__(self,
         press=oh.op_press,
         temp=oh.temp,
@@ -258,7 +277,14 @@ class KineticsRun(object):
         self.lumpsolve = lumpsolve
         
     def addhitran(self,file,a):
+        # TODO refactor so processing HITRAN file and saving a processed line
+        # to self.hline are separate functions. That way, can pass in existing
+        # hline for interactive session rather than figuring out how to shove
+        # that existing hline into a KineticsRun...
         '''Process HITRAN file and save a single line to self.hline.
+
+        Rest of the processed HITRAN file is not added to self. Nothing
+        returned.
 
         Parameters
         ----------
@@ -283,8 +309,15 @@ class KineticsRun(object):
                                 T=self.temp,    
                                 g_air=self.hline['g_air'])
 
+    def integratefromfile(self,file,linenumber,intperiods,avg_step_in_bin):
+
+
+
     def solveode(self, file='13_hit12.par', a=24, intperiods=2.1,
             avg_step_in_bin=20.):
+        # TODO: refactor so this really is only the solveode step. Will provide
+        # more flexibility in wrapping together scripts, e.g., not needing to
+        # reimport a single HITRAN line over and over and over...
         '''Integrate ode describing two-photon LIF.
 
         Use master equation (no Jacobian) and all relevant parameters.
@@ -302,7 +335,8 @@ class KineticsRun(object):
         
         a : int
         index of transition to use, within processed HITRAN data file. a=24
-        gives Q1(1) line in '13_hit12.par'
+        gives Q1(1) line in '13_hit12.par' using what has been the default
+        filter parameters.
 
         intperiods : float
         Number of periods of the Sweep to integrate over.
@@ -469,7 +503,7 @@ class KineticsRun(object):
         return voigt_pos
 
     def dN(self, t, y):
-        '''differential equations describing two- or three-state OH pop model
+        '''Construct differential equations to describe 2- or 3-state model.
 
         Parameters:
         -----------
@@ -635,8 +669,9 @@ class KineticsRun(object):
             return result
 
         
-    def plotpops(self, title='Relative population in v\"=1, N\"=1, J\"=1.5',
-            yl='Fraction of total OH'):
+    def plotpops(self,
+        title='Relative population in vibrationally excited state',
+        yl='Fraction of total OH'):
         '''Given solution N to solveode, plot 'b' state population over time.
 
         Requires:
