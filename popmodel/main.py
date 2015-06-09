@@ -34,6 +34,12 @@ from math import floor
 import logging
 import ConfigParser
 logging.basicConfig(level=logging.INFO)
+import sys
+import yaml
+try:
+    from yaml import CLoader as Loader
+except ImportError:
+    from yaml import Loader # a lot slower sez https://stackoverflow.com/questions/18404441/why-is-pyyaml-spending-so-much-time-in-just-parsing-a-yaml-file
 
 class Sweep(object):
     '''
@@ -310,7 +316,7 @@ class KineticsRun(object):
                                 g_air=self.hline['g_air'])
 
     def integratefromfile(self,file,linenumber,intperiods,avg_step_in_bin):
-
+        return
 
 
     def solveode(self, file='13_hit12.par', a=24, intperiods=2.1,
@@ -840,3 +846,28 @@ def sweepdepen(file):
         # k.sweep.matchAbsSize(k.abfeat)
         k.solveode(file)
         # k.plotpops()
+
+if __name__ == "__main__":
+    # use parameter yaml file to set parameters 
+    with open(sys.argv[2], 'r') as f:
+        par = yaml.load(f,Loader=Loader) 
+    # print par
+    k = KineticsRun(
+            press=par['det-cell']['press'],
+            temp=par['det-cell']['temp'],
+            xoh=par['det-cell']['xoh'],
+            stype=par['ir-laser']['stype'],
+            delay=par['uv-laser']['delay'],
+            keepN=par['solve-ode']['keepN'],
+            tsweep=par['ir-laser']['tsweep'],
+            width=par['ir-laser']['width'],
+            binwidth=par['solve-ode']['binwidth'],
+            factor=par['solve-ode']['factor'],
+            keepTsweep=par['ir-laser']['keepTsweep'],
+            keepwidth=par['ir-laser']['keepwidth'],
+            withoutUV=par['solve-ode']['withoutUV'],
+            rotequil=par['solve-ode']['rotequil'],
+            redistequil=par['solve-ode']['redistequil'],
+            lumpsolve=par['solve-ode']['lumpsolve'])
+    k.solveode(file=sys.argv[1], a=24, intperiods=par['solve-ode']['intperiods'],
+            avg_step_in_bin=par['solve-ode']['avg_step_in_bin'])
