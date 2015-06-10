@@ -152,7 +152,10 @@ def extractNJlabel(x):
     --------
     Na, Nb, Nc, Ja, Jb, Jc, label : ndarrays (7)
     N and J quantum numbers for 'a', 'b', and 'c' states, and strings
-    identifying the b <-- a transitions.
+    identifying the b <-- a transitions. Format of label is 'X_#(*)ll' where
+    X denotes branch (P, Q, R, ...), # describes J cases of upper and lower
+    states (1, 2, 12, 21), * is lower state N, and ll describes which half of
+    lambda doublet is upper/lower state (ef, fe, ee, ff).
     '''
     # TODO: refactor so direct HITRAN extraction is separate from calculations
     # involving third state for TP LIF.
