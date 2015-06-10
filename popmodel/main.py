@@ -128,11 +128,11 @@ class Sweep(object):
                 fullwidth=self.width
                 if self.keepTsweep==False: # scale tsweep by width reduction
                     self.tsweep=self.tsweep*abswidth/fullwidth 
-                    logging.info('alignBins: IR sweep time reduced to {:.2g} \
-                        s'.format(self.tsweep))
+                    logging.info('alignBins: IR sweep time reduced to '+
+                        '{:.2g} s'.format(self.tsweep))
                 else:
-                    logging.info('alignBins: IR sweep time maintained at \
-                        {:.2g} s'.format(self.tsweep))
+                    logging.info('alignBins: IR sweep time maintained at ,'
+                        '{:.2g} s'.format(self.tsweep))
                 self.width=abswidth
                 self.las_bins = abfeat.abs_freq[start:end]
                 abfeat.intpop=abfeat.pop[start:end] # integrated pop
@@ -147,13 +147,14 @@ class Sweep(object):
             self.las_bins=abfeat.abs_freq[start:end]
             self.width=self.las_bins[-1]-self.las_bins[0]+self.binwidth
             abfeat.intpop=abfeat.pop[start:end] # integrated pop
-            logging.info('alignBins: sweep width {:.2g} MHz, \
-                sweep time {:.2g} s'.format(self.width/1e6, self.tsweep))
+            logging.info('alignBins: sweep width ',
+                '{:.2g} MHz, sweep time {:.2g} s'.format(self.width/1e6,
+                    self.tsweep))
         
         # report how much of the b<--a feature is being swept over:
         self.part_swept=np.sum(abfeat.intpop)
-        logging.info('alignBins: region swept by IR beam represents {:.1%} \
-            of feature\'s total population'.format(self.part_swept))
+        logging.info('alignBins: region swept by IR beam represents '+
+            '{:.1%} of feature\'s total population'.format(self.part_swept))
 
 class Abs(object):
     '''absorbance line profile, initially defined in __init__ by a center 
@@ -241,68 +242,47 @@ class KineticsRun(object):
     describing absorption feature. Sweep is made in __init__, while Abs is made
     after the HITRAN file is imported and the absorption feature selected.
     '''
-    def __init__(self,
-        press=oh.op_press,
-        temp=oh.temp,
-        xoh=oh.xoh,
-        stype='sin',
-        delay=100,
-        keepN=False,
-        tsweep=1.e-4,
-        width=500.e6,
-        binwidth=1.e6,
-        factor=.1,
-        keepTsweep=False,
-        keepwidth=False,
-        withoutUV=False,
-        rotequil=True,
-        redistequil=True,
-        lumpsolve=False):
+    def __init__(self, irlaser, sweep, uvlaser, odepar, detcell, irline):
+
+        # detection cell conditions
+        self.detcell = detcell
+        self.detcell['ohtot'] = atm.press_to_numdens(detcell['press'],
+                detcell['temp'])*detcell['xoh']
+
+        # lasers
+        self.irlaser = irlaser
+        self.uvlaser = uvlaser
+
+        # ODE solver parameter dict
+        self.odepar = odepar
+
+        # label for ir line
+        self.irline = irline
+
         # Sweep object
-        self.sweep=Sweep(stype=stype,
-                        tsweep=tsweep,
-                        width=width,
-                        binwidth=binwidth,
-                        factor=factor,
-                        keepTsweep=keepTsweep,
-                        keepwidth=keepwidth)
+        if sweep['dosweep']:
+            self.dosweep=True
+            self.sweep=Sweep(stype=sweep['stype'],
+                            tsweep=sweep['tsweep'],
+                            width=sweep['width'],
+                            binwidth=sweep['binwidth'],
+                            factor=sweep['factor'],
+                            keepTsweep=sweep['keepTsweep'],
+                            keepwidth=sweep['keepwidth'])
+            self.sweep.avg_step_in_bin = sweep['avg_step_in_bin']
+            # Average number of integration steps to spend in each frequency
+            # bin as laser sweeps over frequencies. Default of 20 is
+            # conservative, keeps in mind that time in each bin is variable
+            # when sweep is sinusoidal.
+        else:
+            self.dosweep=False
 
-        # Operation parameters
-        self.press=press # torr
-        self.temp=temp # K
-        self.xoh=xoh # mixing ratio of OH
-        self.ohtot = atm.press_to_numdens(press,temp)*xoh
-
-        # ODE solution parameters
-        self.delay = delay # s, artificial UV delay to allow b to spin up
-        # default delay huge to effectively 'turn off' UV pulse for now...
-        self.keepN = keepN # 'True' keeps full N array -- lots of memory.
-        self.withoutUV = withoutUV # don't bother with UV if not needed
-        self.rotequil = rotequil
-        self.redistequil = redistequil
-        self.lumpsolve = lumpsolve
-        
-    def addhitran(self,file,a):
-        # TODO refactor so processing HITRAN file and saving a processed line
-        # to self.hline are separate functions. That way, can pass in existing
-        # hline for interactive session rather than figuring out how to shove
-        # that existing hline into a KineticsRun...
-        '''Process HITRAN file and save a single line to self.hline.
-
-        Rest of the processed HITRAN file is not added to self. Nothing
-        returned.
-
-        Parameters
-        ----------
-        file : str
-        Path to hitran file (e.g., "13_hit12.par")
-
-        a : int
-        Line of processed hitran array to choose.
+    def chooseline(self,hpar,label):
+        '''Save single line of processed HITRAN file to self.hline.
         '''
-        hpar = loadHITRAN.processHITRAN(file)
-        self.hline = hpar[a] # single set of parameters from hpar
-        logging.info('addhitran: using {} line at {:.4g} cm^-1'
+        lineidx = np.where(hpar['label']==label)[0][0]
+        self.hline = hpar[lineidx]
+        logging.info('chooseline: using {} line at {:.4g} cm^-1'
             .format(self.hline['label'], self.hline['wnum_ab']))
 
     def makeAbs(self):
@@ -311,16 +291,11 @@ class KineticsRun(object):
         '''
         # Set up IR b<--a absorption profile
         self.abfeat = Abs(wnum=self.hline['wnum_ab'])
-        self.abfeat.makeProfile(press=self.press,
-                                T=self.temp,    
+        self.abfeat.makeProfile(press=self.detcell['press'],
+                                T=self.detcell['temp'],    
                                 g_air=self.hline['g_air'])
 
-    def integratefromfile(self,file,linenumber,intperiods,avg_step_in_bin):
-        return
-
-
-    def solveode(self, file='13_hit12.par', a=24, intperiods=2.1,
-            avg_step_in_bin=20.):
+    def solveode(self, parfile='13_hit12.par'):
         # TODO: refactor so this really is only the solveode step. Will provide
         # more flexibility in wrapping together scripts, e.g., not needing to
         # reimport a single HITRAN line over and over and over...
@@ -335,91 +310,87 @@ class KineticsRun(object):
 
         Parameters:
         -----------
-        file : str
+        parfile : str
         Input HITRAN file path (160-char format). Default assumes file is in
         current directory with default HITRAN OH filename
         
-        a : int
-        index of transition to use, within processed HITRAN data file. a=24
-        gives Q1(1) line in '13_hit12.par' using what has been the default
-        filter parameters.
-
-        intperiods : float
-        Number of periods of the Sweep to integrate over.
-
-        avg_step_in_bin : float
-        Average number of integration steps to spend in each frequency bin as
-        laser sweeps over frequencies. Default of 20 is conservative, keeps in
-        mind that time in each bin is variable when sweep is sinusoidal.
-
         Outputs:
         --------
         N : ndarray
         Relative population of 'a', 'b' (and 'c') states over integration time.    
         '''
-        logging.info('solveode: integrating at {} torr, {} K, OH in cell \
-            {:.2g} cm^-3'.format(self.press,self.temp,self.ohtot))
-        logging.info('solveode: sweep mode: {}'.format(self.sweep.stype))
+        logging.info('solveode: integrating at {} torr, {} K, OH in cell, '
+            '{:.2g} cm^-3'.format(self.detcell['press'],self.detcell['temp'],
+                self.detcell['ohtot']))
+
         # Set up IR b<--a absorption profile from HITRAN
-        self.addhitran(file,a)
-        self.makeAbs()
-        
-        # Align bins for IR laser and absorbance features for integration
-        self.sweep.alignBins(self.abfeat)
+        hfile = loadHITRAN.processHITRAN(parfile)
+        self.chooseline(hfile,self.irline)
 
-        # set integration time based on IR sweep time and intperiods argument
-        tl = self.sweep.tsweep*intperiods # total integration time
-        # avg_bintime calced for 'sin'. 'saw' twice as long.
-        avg_bintime = self.sweep.tsweep\
-            /(2*self.sweep.width/self.sweep.binwidth)
-        dt = avg_bintime/avg_step_in_bin
-        # checked: avg 20 avg_step_in_bin agrees with 100
-        self.tbins = np.arange(0, tl+dt, dt)
-        t_steps = np.size(self.tbins)
+        if self.dosweep:
+            logging.info('solveode: sweep mode: {}'.format(self.sweep.stype))
+            self.makeAbs()
+            
+            # Align bins for IR laser and absorbance features for integration
+            self.sweep.alignBins(self.abfeat)
 
-        logging.info('solveode: integrating {:.2g} s, \
-            step size {:.2g} s'.format(tl,dt))
+            # set integration time based on IR sweep time and intperiods
+            tl = self.sweep.tsweep*self.odepar['intperiods'] # total int time
+            # avg_bintime calced for 'sin'. 'saw' twice as long.
+            avg_bintime = self.sweep.tsweep\
+                /(2*self.sweep.width/self.sweep.binwidth)
+            dt = avg_bintime/self.sweep.avg_step_in_bin
+            self.tbins = np.arange(0, tl+dt, dt)
+            t_steps = np.size(self.tbins)
 
-        # define local variables for convenience
-        num_las_bins=np.size(self.sweep.las_bins)
-        num_int_bins=num_las_bins+2 # +2 = outside laser sweep, other rot
-        tsweep = self.sweep.tsweep
-        stype = self.sweep.stype
+            logging.info('solveode: integrating {:.2g} s, '.format(tl)+
+                'step size {:.2g} s'.format(dt))
 
-        # Determine location of swept IR (a to b) laser by defining 1D array
-        # self.sweepfunc: las_bins index for each point in tsweep.
-        tindex=np.arange(np.size(self.tbins))
-        tindexsweep=np.searchsorted(self.tbins,tsweep,side='right')-1
-        if stype=='saw':
-            self.sweepfunc=np.floor((tindex%tindexsweep)*(num_las_bins)\
-                /tindexsweep)
-        elif stype=='sin':
-            self.sweepfunc = np.round((num_las_bins-1)/2.\
-                *np.sin(2*pi/tindexsweep*tindex)+(num_las_bins-1)/2.)
-        else:
-            self.sweepfunc= np.empty(np.size(tindex))
-            self.sweepfunc.fill(np.floor(num_las_bins/2))
+            # define local variables for convenience
+            num_las_bins=np.size(self.sweep.las_bins)
+            num_int_bins=num_las_bins+2 # +2 = outside laser sweep, other rot
+            tsweep = self.sweep.tsweep
+            stype = self.sweep.stype
+
+            # Determine location of swept IR (a to b) laser by defining 1D array
+            # self.sweepfunc: las_bins index for each point in tsweep.
+            tindex=np.arange(np.size(self.tbins))
+            tindexsweep=np.searchsorted(self.tbins,tsweep,side='right')-1
+            if stype=='saw':
+                self.sweepfunc=np.floor((tindex%tindexsweep)*(num_las_bins)\
+                    /tindexsweep)
+            elif stype=='sin':
+                self.sweepfunc = np.round((num_las_bins-1)/2.\
+                    *np.sin(2*pi/tindexsweep*tindex)+(num_las_bins-1)/2.)
+            else:
+                self.sweepfunc= np.empty(np.size(tindex))
+                self.sweepfunc.fill(np.floor(num_las_bins/2))
+
+        else: # single 'bin' excited by laser
+            num_las_bins=1
+            num_int_bins=3
 
         # set up ODE
         self.time_progress=0 # laspos looks at this to choose sweepfunc index.
 
         # Create initial state N0, all pop distributed in ground state
-        if self.withoutUV:
+        if self.odepar['withoutUV']:
             self.nlevels=2
         else:
             self.nlevels=3    
 
         # assume for now dealing with N"=1.
         self.N0 = np.zeros((self.nlevels,num_int_bins))
-        self.N0[0,0:-2] = self.abfeat.intpop * oh.rotfrac[0] * self.ohtot
+        self.N0[0,0:-2] = self.abfeat.intpop * oh.rotfrac[0] \
+        * self.detcell['ohtot']
         self.N0[0,-2] = (self.abfeat.pop.sum() - self.abfeat.intpop.sum()) \
-            *oh.rotfrac[0] * self.ohtot # pop outside laser sweep
-        self.N0[0,-1] = self.ohtot * (1-oh.rotfrac[0]) # other rot levels
+            *oh.rotfrac[0] * self.detcell['ohtot'] # pop outside laser sweep
+        self.N0[0,-1] = self.detcell['ohtot'] * (1-oh.rotfrac[0]) # other rot levels
 
         # Create array to store output at each timestep, depending on keepN
         # N stores a/b/c state pops in each bin over time
         # abcpop stores a/b/c pops, tracks in or out rot level of interest.
-        if self.keepN:
+        if self.odepar['keepN']:
             self.N=np.empty((t_steps,self.nlevels,num_int_bins))
             self.N[0] = self.N0
         else:
@@ -429,7 +400,7 @@ class KineticsRun(object):
         # Initialize scipy.integrate.ode object, lsoda method
         r = ode(self.dN)
         r.set_integrator('lsoda', with_jacobian=False)
-        if self.lumpsolve:
+        if self.odepar['lumpsolve']:
             self.N0lump=self.makeNlump(self.N0)
             r.set_initial_value(list(self.N0lump.ravel()), 0)
         else:
@@ -455,7 +426,7 @@ class KineticsRun(object):
             nextstepN = np.resize(nextstep, (self.nlevels,num_int_bins))
 
             # save output
-            if self.keepN == True:
+            if self.odepar['keepN'] == True:
                 self.N[entry] = nextstepN
             else:
                 self.abcpop[entry] = np.array([nextstepN[:,0:-1].sum(1),
@@ -529,27 +500,28 @@ class KineticsRun(object):
         '''
 
         # Define parameters from OH literature
-        Acb = oh.Acb
-        Aca = oh.Aca
-        kqb = oh.kqb
-        kqc = oh.kqc
+        Acb = oh.Acb # use single c --> b Einstein coefficient
+        Aca = oh.Aca # use single c --> a Einstein coefficient
+        kqb = oh.kqb # use single vibrational quenching rate from b
+        kqc = oh.kqc # use single electronic quenching rate from c
 
         # Define parameters inherent to laser operation
-        Lab = oh.Lab
-        Lbc = oh.Lbc
-        period = oh.period_UV
-        pulsewidth_UV = oh.pulsewidth_UV
+        Lab = oh.spec_intensity(self.irlaser['power'],
+                np.pi*(self.irlaser['diam']*0.5)**2,self.irlaser['bandwidth'])
+        Lbc = oh.spec_intensity(self.uvlaser['power'],
+                np.pi*(self.uvlaser['diam']*0.5)**2,self.uvlaser['bandwidth'])
+        pulsewidth_UV = self.uvlaser['pulse']
 
         # Define parameters dependent on KineticsRun instance:
         Bab = self.hline['Bab']
         Bba = self.hline['Bba']
         Bbc = self.hline['Bbc']
         Bcb = self.hline['Bcb']
-        Q = atm.press_to_numdens(self.press, self.temp) # quencher conc
+        Q = atm.press_to_numdens(self.detcell['press'], self.detcell['temp']) # quencher conc
 
         # Represent position of IR laser with Lab_sweep
         # smaller integration matrix with lumpsolve:
-        if self.lumpsolve:
+        if self.odepar['lumpsolve']:
             Lab_sweep=np.array([Lab,0])
 
         else:
@@ -577,7 +549,7 @@ class KineticsRun(object):
         # or vibrational state
         rrin = rrout * oh.rotfrac/(1-oh.rotfrac)
 
-        if self.redistequil:
+        if self.odepar['redistequil']:
             fdist = (self.N0[0,0:-1]/self.N0[0,0:-1].sum())
         elif y[0,0:-1].sum() != 0:
             fdist = (y[0,0:-1]/y[0,0:-1].sum())
@@ -585,13 +557,13 @@ class KineticsRun(object):
             fdist = 0
 
         # if UV laser calcs are off, only have a and b states:
-        if self.withoutUV:
+        if self.odepar['withoutUV']:
             dN0 = - absorb_ab + stim_emit_ba + quench_b
             dN1 = absorb_ab - stim_emit_ba - quench_b
             intermediate = np.array([dN0, dN1])
 
             rrvalues = np.empty_like(intermediate)
-            if self.rotequil:
+            if self.odepar['rotequil']:
                 rrvalues[0,0:-1] = -y[0,0:-1]*Q*rrout[0] \
                 +y[0,-1]*Q*rrin[0]*fdist
                 # assuming repopulation from other rotational levels flows to 
@@ -616,7 +588,8 @@ class KineticsRun(object):
         # if UV laser calcs are on, a little more to do:
         else:
             # Pulse the UV (b to c) laser (assume total time < rep rate):
-            if t>self.delay and t<pulsewidth_UV+self.delay:
+            if t>self.uvlaser['delay'] and \
+            t<pulsewidth_UV+self.uvlaser['delay']:
                 Lbc=Lbc
             else:
                 Lbc = 0
@@ -642,7 +615,7 @@ class KineticsRun(object):
             intermediate = np.array([dN0, dN1, dN2])
 
             rrvalues = np.empty_like(intermediate)
-            if self.rotequil:
+            if self.odepar['rotequil']:
                 rrvalues[0,0:-1] = -y[0,0:-1]*Q*rrout[0] \
                     + y[0,-1]*Q*rrin[0]*fdist
                 # assuming repopulation from other rotational levels flows to 
@@ -700,7 +673,7 @@ class KineticsRun(object):
             self.abcpop[:,:,0]=self.N[:,:,0:-1].sum(2)
             self.abcpop[:,:,1]=self.N[:,:,-1]
 
-        self.plotvslaser(self.abcpop[:,1,0]/self.ohtot,title,yl)
+        self.plotvslaser(self.abcpop[:,1,0]/self.detcell['ohtot'],title,yl)
 
     def plotvslaser(self,func,title='plot',yl='y axis'):
         '''Make arbitrary plot in time with laser sweep as second plot
@@ -719,7 +692,7 @@ class KineticsRun(object):
         if hasattr(self,'abcpop')==False and hasattr(self,'N')==False:
             logging.warning('need to run solveode first!')
             return
-        elif hasattr(self,'abcpop')==False and self.keepN:
+        elif hasattr(self,'abcpop')==False and self.odepar['keepN']:
             self.abcpop = np.empty((np.size(self.tbins),self.nlevels,2))
             self.abcpop[:,:,0]=self.N[:,:,0:-1].sum(2)
             self.abcpop[:,:,1]=self.N[:,:,-1]
@@ -753,7 +726,7 @@ class KineticsRun(object):
         fig, (ax0) = plt.subplots(nrows=1)
         ax0.plot(self.abfeat.abs_freq/1e6,self.abfeat.pop)
         ax0.set_title('Calculated absorption feature, ' \
-            + str(self.press)+' torr')
+            + str(self.detcell['press'])+' torr')
         ax0.set_xlabel('Relative frequency (MHz)')
         ax0.set_ylabel('Relative absorption')
         
@@ -801,6 +774,7 @@ class KineticsRun(object):
             self.abfeat.abs_freq=data['abs_freq']
             self.abfeat.pop=data['pop']
 
+##############################################################################
 # Simple batch scripts
 
 def pressdepen(file):
@@ -847,27 +821,45 @@ def sweepdepen(file):
         k.solveode(file)
         # k.plotpops()
 
+##############################################################################
+# command line use: `main.py hitfile.par parameters.yaml`
 if __name__ == "__main__":
+    '''PSEUDOCODE: (wrap this up as runkinetics(hitfile, parameters))
+
+    par=yaml.load('parameters.yaml')
+
+    hitfile = sys.argv[1]
+
+    wantirprofile = par['ir-laser']['sweep']['dosweep']
+
+    irline = makeirline(hitfile, par['ir-line'],makeabs=wantirprofile) # import
+    hitran file and make representation of selected line. Either just extract
+    line parameters or also make absorption profile
+
+    uvline = makeuvline(par['uv-line']) # not sure how much parameters actually
+    matter on selection of UV line
+
+    # sets up kinetics run with parameters determined by input arguments,
+    # rationally organized for a change
+    k=KineticsRun(solver=par['solve-ode'],
+                  irlaser=par['ir-laser'],
+                  uvlaser=par['uv-laser'],
+                  rates = oh.rates,
+                  irline = irline,
+                  uvline = uvline,
+                  detcell = par['det-cell'])
+
+    # .solveode() really only solves the ode and makes an output
+    k.solveode(outputcsv=sys.argv[3], logfile = 'logfile.log')
+    '''
     # use parameter yaml file to set parameters 
     with open(sys.argv[2], 'r') as f:
         par = yaml.load(f,Loader=Loader) 
-    # print par
     k = KineticsRun(
-            press=par['det-cell']['press'],
-            temp=par['det-cell']['temp'],
-            xoh=par['det-cell']['xoh'],
-            stype=par['ir-laser']['stype'],
-            delay=par['uv-laser']['delay'],
-            keepN=par['solve-ode']['keepN'],
-            tsweep=par['ir-laser']['tsweep'],
-            width=par['ir-laser']['width'],
-            binwidth=par['solve-ode']['binwidth'],
-            factor=par['solve-ode']['factor'],
-            keepTsweep=par['ir-laser']['keepTsweep'],
-            keepwidth=par['ir-laser']['keepwidth'],
-            withoutUV=par['solve-ode']['withoutUV'],
-            rotequil=par['solve-ode']['rotequil'],
-            redistequil=par['solve-ode']['redistequil'],
-            lumpsolve=par['solve-ode']['lumpsolve'])
-    k.solveode(file=sys.argv[1], a=24, intperiods=par['solve-ode']['intperiods'],
-            avg_step_in_bin=par['solve-ode']['avg_step_in_bin'])
+            irlaser=par['ir-laser'],
+            sweep=par['sweep'],
+            uvlaser=par['uv-laser'],
+            odepar=par['solve-ode'],
+            detcell=par['det-cell'],
+            irline=par['ir-line'])
+    k.solveode(parfile=sys.argv[1])
