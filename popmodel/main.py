@@ -284,12 +284,18 @@ class KineticsRun(object):
     def runmodel(self, parfile, logfile=None, output=None, image=None):
         '''run full pipeline from parameters and file to integrated output'''
 
+        # write messages to logfile
+        # if logfile:
         # Set up IR b<--a absorption profile from HITRAN
         hfile = loadHITRAN.processHITRAN(parfile)
         self.chooseline(hfile,self.irline)
 
         # integrate
         self.solveode()
+
+        # save image
+        if image:
+            self.plotpops(pngout = image)
 
     def chooseline(self,hpar,label):
         '''Save single line of processed HITRAN file to self.hline.
@@ -663,7 +669,7 @@ class KineticsRun(object):
         
     def plotpops(self,
         title='Relative population in vibrationally excited state',
-        yl='Fraction of total OH'):
+        yl='Fraction of total OH', pngout = None):
         '''Given solution N to solveode, plot 'b' state population over time.
 
         Requires:
@@ -686,9 +692,9 @@ class KineticsRun(object):
             self.abcpop[:,:,0]=self.N[:,:,0:-1].sum(2)
             self.abcpop[:,:,1]=self.N[:,:,-1]
 
-        self.plotvslaser(self.abcpop[:,1,0]/self.detcell['ohtot'],title,yl)
+        self.plotvslaser(self.abcpop[:,1,0]/self.detcell['ohtot'],title,yl,pngout)
 
-    def plotvslaser(self,func,title='plot',yl='y axis'):
+    def plotvslaser(self,func,title='plot',yl='y axis',pngout=None):
         '''Make arbitrary plot in time with laser sweep as second plot
         
         Parameters
@@ -717,12 +723,18 @@ class KineticsRun(object):
         ax0.set_ylabel(yl)
 
         time_indices=np.arange(np.size(self.tbins))
-        ax1.plot(self.tbins*1e6,
-            self.sweep.las_bins[self.sweepfunc[time_indices].astype(int)]/1e6)
+        if self.dosweep:
+            ax1.plot(self.tbins*1e6,
+                self.sweep.las_bins[self.sweepfunc[time_indices].astype(int)]/1e6)
+        else:
+            ax1.plot(self.tbins*1e6,self.tbins*0)
         ax1.set_title('Position of IR beam')
         ax1.set_xlabel('Time ($\mu$s)')
         ax1.set_ylabel('Relative Frequency (MHz)')
-        plt.show()    
+        if pngout:
+            plt.savefig(pngout)
+        else:
+            plt.show()    
 
     def plotfeature(self,laslines=True):
         '''Plot the calculated absorption feature in frequency space
@@ -835,26 +847,12 @@ def sweepdepen(file):
         # k.plotpops()
 
 ##############################################################################
-# command line use: `main.py hitfile.par parameters.yaml`
+# command line use: HITFILE PARAMETERS [-l] LOGFILE [-o] OUTPUT -i IMAGE
 if __name__ == "__main__":
     '''Run from command line passing hitran par file and parameters yaml file
     as arguments.
-    
-    PSEUDOCODE: (wrap this up as runmodel(hitfile))
-
-    # sets up kinetics run with parameters determined by input arguments,
-    # rationally organized for a change
-    k=KineticsRun(solver=par['solve-ode'],
-                  irlaser=par['ir-laser'],
-                  uvlaser=par['uv-laser'],
-                  rates = oh.rates,
-                  irline = irline,
-                  uvline = uvline,
-                  detcell = par['det-cell'])
-
-    # runmodel() solves the ode (using solveode()) and makes an output
-    k.runmodel(outputcsv=sys.argv[3], logfile = 'logfile.log')
     '''
+
     parser = argparse.ArgumentParser(description=("integrate two- or "+
     "three-level LIF system for given HITRAN file and set of parameters"))
     # HITFILE PARAMETERS [-l] LOGFILE [-o] OUTPUT -i IMAGE
@@ -864,9 +862,12 @@ if __name__ == "__main__":
     parser.add_argument("-o", "--output", help="output file")
     parser.add_argument("-i", "--image", help="output png image")
     args = parser.parse_args()
+
     # use parameter yaml file to set parameters 
     with open(args.parameters, 'r') as f:
         par = yaml.load(f,Loader=Loader) 
+
+    # initialize KineticsRun instance and run
     k = KineticsRun(
             irlaser=par['ir-laser'],
             sweep=par['sweep'],
