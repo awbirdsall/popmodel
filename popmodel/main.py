@@ -45,7 +45,7 @@ class Sweep(object):
     '''
     Represent sweeping parameters of the laser. Before performing solveode on
     a KineticsRun, need to alignBins of Sweep: adjust Sweep parameters to
-    match Abs and align bins of Abs and Sweep. solveode does this.
+    match Abs and align bins of Abs and Sweep. runmodel does this.
     '''
     def __init__(self,
         stype='sin',
@@ -243,7 +243,11 @@ class KineticsRun(object):
     after the HITRAN file is imported and the absorption feature selected.
     '''
     def __init__(self, irlaser, sweep, uvlaser, odepar, detcell, irline):
-
+        '''Initizalize KineticsRuns using dictionaries of input parameters.
+        
+        These parameters can be gathered up in a yaml file (in format of
+        parameters.yaml) and passed in from the command line.
+        '''
         # detection cell conditions
         self.detcell = detcell
         self.detcell['ohtot'] = atm.press_to_numdens(detcell['press'],
@@ -277,6 +281,16 @@ class KineticsRun(object):
         else:
             self.dosweep=False
 
+    def runmodel(self,parfile):
+        '''full pipeline of parameters and file to integrated output'''
+
+        # Set up IR b<--a absorption profile from HITRAN
+        hfile = loadHITRAN.processHITRAN(parfile)
+        self.chooseline(hfile,self.irline)
+
+        # integrate
+        self.solveode()
+
     def chooseline(self,hpar,label):
         '''Save single line of processed HITRAN file to self.hline.
         '''
@@ -295,10 +309,7 @@ class KineticsRun(object):
                                 T=self.detcell['temp'],    
                                 g_air=self.hline['g_air'])
 
-    def solveode(self, parfile='13_hit12.par'):
-        # TODO: refactor so this really is only the solveode step. Will provide
-        # more flexibility in wrapping together scripts, e.g., not needing to
-        # reimport a single HITRAN line over and over and over...
+    def solveode(self):
         '''Integrate ode describing two-photon LIF.
 
         Use master equation (no Jacobian) and all relevant parameters.
@@ -308,12 +319,6 @@ class KineticsRun(object):
         quenching, and laser parameters. Also set up parameters for solving
         and plotting ODE.
 
-        Parameters:
-        -----------
-        parfile : str
-        Input HITRAN file path (160-char format). Default assumes file is in
-        current directory with default HITRAN OH filename
-        
         Outputs:
         --------
         N : ndarray
@@ -323,9 +328,7 @@ class KineticsRun(object):
             '{:.2g} cm^-3'.format(self.detcell['press'],self.detcell['temp'],
                 self.detcell['ohtot']))
 
-        # Set up IR b<--a absorption profile from HITRAN
-        hfile = loadHITRAN.processHITRAN(parfile)
-        self.chooseline(hfile,self.irline)
+        tl = self.odepar['inttime'] # total int time
 
         if self.dosweep:
             logging.info('solveode: sweep mode: {}'.format(self.sweep.stype))
@@ -334,8 +337,6 @@ class KineticsRun(object):
             # Align bins for IR laser and absorbance features for integration
             self.sweep.alignBins(self.abfeat)
 
-            # set integration time based on IR sweep time and intperiods
-            tl = self.sweep.tsweep*self.odepar['intperiods'] # total int time
             # avg_bintime calced for 'sin'. 'saw' twice as long.
             avg_bintime = self.sweep.tsweep\
                 /(2*self.sweep.width/self.sweep.binwidth)
@@ -369,6 +370,11 @@ class KineticsRun(object):
         else: # single 'bin' excited by laser
             num_las_bins=1
             num_int_bins=3
+            dt = self.odepar['dt'] # s
+            self.tbins = np.arange(0, tl+dt, dt)
+            t_steps = np.size(self.tbins)
+            tindex=np.arange(t_steps)
+            self.sweepfunc= np.zeros(np.size(tindex))
 
         # set up ODE
         self.time_progress=0 # laspos looks at this to choose sweepfunc index.
@@ -381,10 +387,14 @@ class KineticsRun(object):
 
         # assume for now dealing with N"=1.
         self.N0 = np.zeros((self.nlevels,num_int_bins))
-        self.N0[0,0:-2] = self.abfeat.intpop * oh.rotfrac[0] \
-        * self.detcell['ohtot']
-        self.N0[0,-2] = (self.abfeat.pop.sum() - self.abfeat.intpop.sum()) \
-            *oh.rotfrac[0] * self.detcell['ohtot'] # pop outside laser sweep
+        if self.dosweep:
+            self.N0[0,0:-2] = self.abfeat.intpop * oh.rotfrac[0] \
+            * self.detcell['ohtot']
+            self.N0[0,-2] = (self.abfeat.pop.sum() - self.abfeat.intpop.sum()) \
+                *oh.rotfrac[0] * self.detcell['ohtot'] # pop outside laser sweep
+        else:
+            self.N0[0,0] = self.detcell['ohtot'] * oh.rotfrac[0]
+            self.N0[0,-2] = 0 # no population within rot level isn't excited. 
         self.N0[0,-1] = self.detcell['ohtot'] * (1-oh.rotfrac[0]) # other rot levels
 
         # Create array to store output at each timestep, depending on keepN
@@ -524,11 +534,14 @@ class KineticsRun(object):
         if self.odepar['lumpsolve']:
             Lab_sweep=np.array([Lab,0])
 
-        else:
+        elif self.dosweep:
             voigt_pos=self.laspos()
             num_int_bins=np.size(self.sweep.las_bins)+2
             Lab_sweep=np.zeros(num_int_bins)
             Lab_sweep[voigt_pos]=Lab
+
+        else: # no sweep, laser always on single bin of entire line
+            Lab_sweep = np.array([Lab, 0, 0])
 
         # reshape y back into form where each nested 1D array contains all
         # populations in given energy level:
@@ -824,20 +837,10 @@ def sweepdepen(file):
 ##############################################################################
 # command line use: `main.py hitfile.par parameters.yaml`
 if __name__ == "__main__":
-    '''PSEUDOCODE: (wrap this up as runkinetics(hitfile, parameters))
-
-    par=yaml.load('parameters.yaml')
-
-    hitfile = sys.argv[1]
-
-    wantirprofile = par['ir-laser']['sweep']['dosweep']
-
-    irline = makeirline(hitfile, par['ir-line'],makeabs=wantirprofile) # import
-    hitran file and make representation of selected line. Either just extract
-    line parameters or also make absorption profile
-
-    uvline = makeuvline(par['uv-line']) # not sure how much parameters actually
-    matter on selection of UV line
+    '''Run from command line passing hitran par file and parameters yaml file
+    as arguments.
+    
+    PSEUDOCODE: (wrap this up as runmodel(hitfile))
 
     # sets up kinetics run with parameters determined by input arguments,
     # rationally organized for a change
@@ -849,8 +852,8 @@ if __name__ == "__main__":
                   uvline = uvline,
                   detcell = par['det-cell'])
 
-    # .solveode() really only solves the ode and makes an output
-    k.solveode(outputcsv=sys.argv[3], logfile = 'logfile.log')
+    # runmodel() solves the ode (using solveode()) and makes an output
+    k.runmodel(outputcsv=sys.argv[3], logfile = 'logfile.log')
     '''
     # use parameter yaml file to set parameters 
     with open(sys.argv[2], 'r') as f:
@@ -862,4 +865,4 @@ if __name__ == "__main__":
             odepar=par['solve-ode'],
             detcell=par['det-cell'],
             irline=par['ir-line'])
-    k.solveode(parfile=sys.argv[1])
+    k.runmodel(sys.argv[1])
