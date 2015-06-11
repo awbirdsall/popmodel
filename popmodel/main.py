@@ -34,7 +34,7 @@ from math import floor
 import logging
 import ConfigParser
 logging.basicConfig(level=logging.INFO)
-import sys
+import argparse
 import yaml
 try:
     from yaml import CLoader as Loader
@@ -281,8 +281,8 @@ class KineticsRun(object):
         else:
             self.dosweep=False
 
-    def runmodel(self,parfile):
-        '''full pipeline of parameters and file to integrated output'''
+    def runmodel(self, parfile, logfile=None, output=None, image=None):
+        '''run full pipeline from parameters and file to integrated output'''
 
         # Set up IR b<--a absorption profile from HITRAN
         hfile = loadHITRAN.processHITRAN(parfile)
@@ -522,7 +522,7 @@ class KineticsRun(object):
                 np.pi*(self.uvlaser['diam']*0.5)**2,self.uvlaser['bandwidth'])
         pulsewidth_UV = self.uvlaser['pulse']
 
-        # Define parameters dependent on KineticsRun instance:
+        # Define parameters dependent on line selected in KineticsRun:
         Bab = self.hline['Bab']
         Bba = self.hline['Bba']
         Bbc = self.hline['Bbc']
@@ -855,8 +855,17 @@ if __name__ == "__main__":
     # runmodel() solves the ode (using solveode()) and makes an output
     k.runmodel(outputcsv=sys.argv[3], logfile = 'logfile.log')
     '''
+    parser = argparse.ArgumentParser(description=("integrate two- or "+
+    "three-level LIF system for given HITRAN file and set of parameters"))
+    # HITFILE PARAMETERS [-l] LOGFILE [-o] OUTPUT -i IMAGE
+    parser.add_argument("hitfile", help="Hitran file")
+    parser.add_argument("parameters", help="YAML parameter file")
+    parser.add_argument("-l", "--logfile", help="log file")
+    parser.add_argument("-o", "--output", help="output file")
+    parser.add_argument("-i", "--image", help="output png image")
+    args = parser.parse_args()
     # use parameter yaml file to set parameters 
-    with open(sys.argv[2], 'r') as f:
+    with open(args.parameters, 'r') as f:
         par = yaml.load(f,Loader=Loader) 
     k = KineticsRun(
             irlaser=par['ir-laser'],
@@ -865,4 +874,4 @@ if __name__ == "__main__":
             odepar=par['solve-ode'],
             detcell=par['det-cell'],
             irline=par['ir-line'])
-    k.runmodel(sys.argv[1])
+    k.runmodel(args.hitfile,args.logfile,args.output,args.image)
