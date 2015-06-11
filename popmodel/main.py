@@ -33,13 +33,27 @@ from scipy.integrate import ode
 from math import floor
 import logging
 import ConfigParser
-logging.basicConfig(level=logging.INFO)
 import argparse
 import yaml
+import sys
 try:
     from yaml import CLoader as Loader
 except ImportError:
     from yaml import Loader # a lot slower sez https://stackoverflow.com/questions/18404441/why-is-pyyaml-spending-so-much-time-in-just-parsing-a-yaml-file
+
+# set up logging, follow python logging cookbook
+# need to initialize here AND in each class/submodule
+logger = logging.getLogger('popmodel')
+logger.setLevel(logging.INFO)
+# console handler always runs
+ch = logging.StreamHandler()
+ch.setLevel(logging.INFO)
+formatter = logging.Formatter('%(levelname)s:%(name)s:%(message)s')
+ch.setFormatter(formatter)
+logger.addHandler(ch)
+# print ch.stream
+# print logger.handlers
+# logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s',datefmt='%m/%d/%Y %I:%M:%S %p')
 
 class Sweep(object):
     '''
@@ -55,6 +69,8 @@ class Sweep(object):
         factor=.1,
         keepTsweep=False,
         keepwidth=False):
+
+        self.logger = logging.getLogger('popmodel.sweep')
 
         # parameters that don't change after initiated
         self.ircen=0 # set center of swept ir
@@ -118,7 +134,7 @@ class Sweep(object):
             # to the allowed dithering range. Only reduce self.width if the
             # frequency width obtained using the cutoff is less than that:
             if abswidth > self.width: # keep self.width maximized
-                logging.info('alignBins: IR sweep width maximized: {:.2g} MHz'
+                logger.info('alignBins: IR sweep width maximized: {:.2g} MHz'
                     .format(self.width/1e6))
                 abmid = floor(np.size(abfeat.abs_freq)/2.)
                 irfw=self.width/self.binwidth
@@ -128,32 +144,32 @@ class Sweep(object):
                 fullwidth=self.width
                 if self.keepTsweep==False: # scale tsweep by width reduction
                     self.tsweep=self.tsweep*abswidth/fullwidth 
-                    logging.info('alignBins: IR sweep time reduced to '+
+                    logger.info('alignBins: IR sweep time reduced to '+
                         '{:.2g} s'.format(self.tsweep))
                 else:
-                    logging.info('alignBins: IR sweep time maintained at ,'
+                    logger.info('alignBins: IR sweep time maintained at ,'
                         '{:.2g} s'.format(self.tsweep))
                 self.width=abswidth
                 self.las_bins = abfeat.abs_freq[start:end]
                 abfeat.intpop=abfeat.pop[start:end] # integrated pop
-                logging.info('alignBins: IR sweep width reduced to {:.2g} MHz'
+                logger.info('alignBins: IR sweep width reduced to {:.2g} MHz'
                     .format(abswidth/1e6))
 
         else:
             # Keep initial width, but still align bins to abfeat.abs_freq
-            logging.info('alignBins: maintaining manual width and tsweep')
+            logger.info('alignBins: maintaining manual width and tsweep')
             start = np.where(abfeat.abs_freq>=self.las_bins[0])[0][0]
             end = np.where(abfeat.abs_freq<=self.las_bins[-1])[0][-1]
             self.las_bins=abfeat.abs_freq[start:end]
             self.width=self.las_bins[-1]-self.las_bins[0]+self.binwidth
             abfeat.intpop=abfeat.pop[start:end] # integrated pop
-            logging.info('alignBins: sweep width ',
+            logger.info('alignBins: sweep width ',
                 '{:.2g} MHz, sweep time {:.2g} s'.format(self.width/1e6,
                     self.tsweep))
         
         # report how much of the b<--a feature is being swept over:
         self.part_swept=np.sum(abfeat.intpop)
-        logging.info('alignBins: region swept by IR beam represents '+
+        logger.info('alignBins: region swept by IR beam represents '+
             '{:.1%} of feature\'s total population'.format(self.part_swept))
 
 class Abs(object):
@@ -171,10 +187,11 @@ class Abs(object):
     array have less than 1% of the center.
     '''
     def __init__(self,wnum,binwidth=1.e6):
+        self.logger = logging.getLogger('popmodel.Abs')
         self.wnum=wnum # cm^-1
         self.freq=wnum*c*100 # Hz
         self.binwidth=binwidth # Hz
-       
+
     def __str__(self):
         return 'Absorbance feature centered at '+str(self.wnum)+' cm^-1'
       
@@ -227,10 +244,10 @@ class Abs(object):
         startfwhm=np.where(pop>=np.max(pop)*0.5)[0][0]
         endfwhm=np.where(pop>=np.max(pop)*0.5)[0][-1]
         fwhm=abs_freq[endfwhm]-abs_freq[startfwhm]
-        logging.info('makeProfile: made abs profile')
-        logging.info('makeProfile: abs profile has FWHM = {:.2g} MHz'
+        logger.info('makeProfile: made abs profile')
+        logger.info('makeProfile: abs profile has FWHM = {:.2g} MHz'
             .format(fwhm/1e6))
-        logging.info('makeProfile: total width of stored array = {:.2g} MHz'
+        logger.info('makeProfile: total width of stored array = {:.2g} MHz'
             .format(abswidth/1e6))
 
         # return np.array([abs_freq, pop])
@@ -248,6 +265,7 @@ class KineticsRun(object):
         These parameters can be gathered up in a yaml file (in format of
         parameters.yaml) and passed in from the command line.
         '''
+        self.logger = logging.getLogger('popmodel.KineticsRun')
         # detection cell conditions
         self.detcell = detcell
         self.detcell['ohtot'] = atm.press_to_numdens(detcell['press'],
@@ -302,7 +320,7 @@ class KineticsRun(object):
         '''
         lineidx = np.where(hpar['label']==label)[0][0]
         self.hline = hpar[lineidx]
-        logging.info('chooseline: using {} line at {:.4g} cm^-1'
+        logger.info('chooseline: using {} line at {:.4g} cm^-1'
             .format(self.hline['label'], self.hline['wnum_ab']))
 
     def makeAbs(self):
@@ -330,14 +348,14 @@ class KineticsRun(object):
         N : ndarray
         Relative population of 'a', 'b' (and 'c') states over integration time.    
         '''
-        logging.info('solveode: integrating at {} torr, {} K, OH in cell, '
+
+        logger.info('solveode: integrating at {} torr, {} K, OH in cell, '
             '{:.2g} cm^-3'.format(self.detcell['press'],self.detcell['temp'],
                 self.detcell['ohtot']))
-
         tl = self.odepar['inttime'] # total int time
 
         if self.dosweep:
-            logging.info('solveode: sweep mode: {}'.format(self.sweep.stype))
+            logger.info('solveode: sweep mode: {}'.format(self.sweep.stype))
             self.makeAbs()
             
             # Align bins for IR laser and absorbance features for integration
@@ -350,7 +368,7 @@ class KineticsRun(object):
             self.tbins = np.arange(0, tl+dt, dt)
             t_steps = np.size(self.tbins)
 
-            logging.info('solveode: integrating {:.2g} s, '.format(tl)+
+            logger.info('solveode: integrating {:.2g} s, '.format(tl)+
                 'step size {:.2g} s'.format(dt))
 
             # define local variables for convenience
@@ -422,17 +440,17 @@ class KineticsRun(object):
         else:
             r.set_initial_value(list(self.N0.ravel()), 0)
 
-        logging.info('  %  |   time   |   bin   ')
-        logging.info('--------------------------')
+        logger.info('  %  |   time   |   bin   ')
+        logger.info('--------------------------')
 
         # Solve ODE
-        old_complete=0 # tracks integration progress for logging
+        old_complete=0 # tracks integration progress for logger
         while r.successful() and r.t < tl-dt:
             # display progress
             complete = r.t/tl
 
             if floor(complete*100/10)!=floor(old_complete*100/10):
-                logging.info(' {0:>3.0%} | {1:8.2g} | {2:7.0f} '
+                logger.info(' {0:>3.0%} | {1:8.2g} | {2:7.0f} '
                     .format(complete,r.t,self.sweepfunc[self.time_progress]))
             old_complete = complete
             
@@ -450,7 +468,7 @@ class KineticsRun(object):
 
             self.time_progress+=1
 
-        logging.info('solveode: done with integration')
+        logger.info('solveode: done with integration')
 
     def makeNlump(self,N):
         '''Try to make solveode more efficient by lumping together all N that
@@ -492,7 +510,7 @@ class KineticsRun(object):
         num_las_bins=np.size(self.sweep.las_bins)
         num_int_bins=num_las_bins+2
         if voigt_pos+1 > num_las_bins:
-            logging.warning('laspos: voigt_pos out of range')
+            logger.warning('laspos: voigt_pos out of range')
         return voigt_pos
 
     def dN(self, t, y):
@@ -685,7 +703,7 @@ class KineticsRun(object):
         Y-axis label to display.
         '''
         if hasattr(self,'abcpop')==False and hasattr(self,'N')==False:
-            logging.warning('need to run solveode first!')
+            logger.warning('need to run solveode first!')
             return
         elif hasattr(self,'abcpop')==False and hasattr(self,'N')==True:
             self.abcpop = np.empty((np.size(self.tbins),self.nlevels,2))
@@ -709,7 +727,7 @@ class KineticsRun(object):
         Y-axis label to display.
         '''
         if hasattr(self,'abcpop')==False and hasattr(self,'N')==False:
-            logging.warning('need to run solveode first!')
+            logger.warning('need to run solveode first!')
             return
         elif hasattr(self,'abcpop')==False and self.odepar['keepN']:
             self.abcpop = np.empty((np.size(self.tbins),self.nlevels,2))
@@ -805,7 +823,7 @@ class KineticsRun(object):
 def pressdepen(file):
     '''Run solveode over range of pressures.
 
-    Default solveode run, all output just printed with logging.info.
+    Default solveode run, all output just printed with logger.info.
 
     Parameters
     ----------
@@ -815,10 +833,10 @@ def pressdepen(file):
     i=1
     pressconsidered=(2,10,100,760)
     for press in pressconsidered:
-        logging.info('--------------------')
-        logging.info('KineticsRun {:} OF {}'.format(i,
+        logger.info('--------------------')
+        logger.info('KineticsRun {:} OF {}'.format(i,
             np.size(pressconsidered)))
-        logging.info('--------------------')
+        logger.info('--------------------')
         k=KineticsRun(press=press,stype='sin')
         k.solveode(file)
         # k.plotpops()
@@ -830,7 +848,7 @@ def pressdepen(file):
 def sweepdepen(file):
     '''Run solveode over range of sweep widths.
 
-    Default solveode run, all output just printed with logging.info.
+    Default solveode run, all output just printed with logger.info.
 
     Parameters
     ----------
@@ -852,7 +870,6 @@ if __name__ == "__main__":
     '''Run from command line passing hitran par file and parameters yaml file
     as arguments.
     '''
-
     parser = argparse.ArgumentParser(description=("integrate two- or "+
     "three-level LIF system for given HITRAN file and set of parameters"))
     # HITFILE PARAMETERS [-l] LOGFILE [-o] OUTPUT -i IMAGE
@@ -862,6 +879,16 @@ if __name__ == "__main__":
     parser.add_argument("-o", "--output", help="output file")
     parser.add_argument("-i", "--image", help="output png image")
     args = parser.parse_args()
+
+    # set up FileHandler for logging to file if requested
+    if args.logfile:
+        fh = logging.FileHandler(args.logfile)
+        fh.setLevel(logging.INFO)
+        logfile_formatter = logging.Formatter('%(asctime)s:%(levelname)s:'+
+            '%(name)s:%(message)s')
+        fh.setFormatter(logfile_formatter)
+        logger.addHandler(fh)
+        logger.info('writing logfile to '+args.logfile)
 
     # use parameter yaml file to set parameters 
     with open(args.parameters, 'r') as f:

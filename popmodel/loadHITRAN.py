@@ -14,6 +14,8 @@ import ohcalcs as oh
 import logging
 from fractions import Fraction
 
+loadhitran_logger = logging.getLogger('popmodel.loadhitran')
+
 def importhitran(file, columns=None):
     '''
     Extract complete set of data from HITRAN-type par file.
@@ -367,5 +369,5 @@ def processHITRAN(file, Scutoff=1e-20, vabmin=3250, vabmax=3800):
                 ]
 
     alldata = np.rec.fromarrays(arraylist,dtype=dtypelist)
-    logging.info('processHITRAN: file processed')
+    loadhitran_logger.info('processHITRAN: file processed')
     return alldata
