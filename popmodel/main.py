@@ -876,7 +876,7 @@ if __name__ == "__main__":
     parser.add_argument("hitfile", help="Hitran file")
     parser.add_argument("parameters", help="YAML parameter file")
     parser.add_argument("-l", "--logfile", help="log file")
-    parser.add_argument("-o", "--output", help="output file")
+    parser.add_argument("-o", "--output", help="3-state output csv")
     parser.add_argument("-i", "--image", help="output png image")
     args = parser.parse_args()
 
@@ -903,3 +903,9 @@ if __name__ == "__main__":
             detcell=par['det-cell'],
             irline=par['ir-line'])
     k.runmodel(args.hitfile,args.logfile,args.output,args.image)
+    if args.output:
+        if hasattr(k,'abcpop')==False and hasattr(k,'N')==True:
+            self.abcpop = np.empty((np.size(self.tbins),self.nlevels,2))
+            self.abcpop[:,:,0]=self.N[:,:,0:-1].sum(2)
+            self.abcpop[:,:,1]=self.N[:,:,-1]
+        np.savetxt(args.output,k.abcpop[:,:,0])
