@@ -56,6 +56,10 @@ Aca = 1.45e6 #s-1, for A2Sigma+(v'=0)-->X2Pi(v"=0), German (1975)
 # No c<--a laser, so B coefficients not applicable.
 
 # rotational relaxation
+rrout = np.array([7.72e-10,7.72e-10, 4.65e-10])
+# Smith and Crosley, 1990 model rates. Undifferentiated by quencher or v.
+
+# Thermal rotational distribution
 # assume for now dealing with N"=1.
 rotfrac_a = 0.199104 # taken from LIFBASE, 296 K thermal distribution, both halves of lambda doublet
 rotfrac_b = 0.192688 # this row and previous: N(F1e+f) for J=1.5

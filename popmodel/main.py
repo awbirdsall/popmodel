@@ -536,11 +536,9 @@ class KineticsRun(object):
         Aca = oh.Aca # use single c --> a Einstein coefficient
         kqb = oh.kqb # use single vibrational quenching rate from b
         kqc = oh.kqc # use single electronic quenching rate from c
-        # rotational relaxation
-        # convention: positive = gain pop in rot state of interest
-        rrout = np.array([7.72e-10,7.72e-10, 4.65e-10])
-        # Values from Smith and Crosley, 1990. Undifferentiated for quencher
-        # or vibrational state
+        rrout = oh.rrout # rotational relaxation
+        # use three unified rotational level depopulation rates: one each for
+        # a, b and c RET (with a = b following Smith and Crosley, 1990 model)
 
         # Define parameters dependent on line selected in KineticsRun:
         Bab = self.hline['Bab']
