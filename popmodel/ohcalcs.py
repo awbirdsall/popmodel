@@ -1,5 +1,5 @@
-## Python module for OH double resonance calculations
-## Updated June 2014
+## Helper module in popmodel containing constants and functions for
+## OH calculations.
 ## Adam Birdsall
 
 ## Literature cited:
@@ -29,22 +29,28 @@ def kqavg(kn2,ko2,kh2o,xh2o=0.02):
 
 #######################
 
-## Literature values for OH
+### Literature values for OH
 mass = 17.01/(N_A)*1000    # kg
 
-nu12 = 3407.53 * atm.wavenum_to_Hz  # Hz, IR transition used in Tsuji et al, 2000
+nu12 = 3407.53 * atm.wavenum_to_Hz  # Hz, IR transition used in Tsuji et al,
+# 2000. Illustrative example; popmodel extracts precise wavenumber for given IR
+#       transition from HITRAN.
 
-# Degeneracies
+## Degeneracies
 # Generally, degeneracies for rotational quantum number J are 2J+1. The ground
-# electronic state is PI, so lambda doubling doubles the degeneracies (unless
-# it breaks them?). A-state is SIGMA, so there is no lambda doubling.
-ga = 20    # (J = 4.5)
+# electronic state is PI, so lambda doubling doubles the degeneracies. A-state
+# is SIGMA, so there is no lambda doubling.
 
+# Example values for 3-level system where IR transition is P branch and UV is
+# Q branch:
+ga = 20    # (J = 4.5)
 gb = 16    # (J = 3.5)
 gc = 8    # From (2*J + 1) and N = 3 (?) for Tsuji et al. feature. Assuming
             # Q branch.
 
-# Einstein coefficients
+## Einstein coefficients
+# Aba is very slow and unimportant for popmodel calculations. Acb and Aca are
+# used by popmodel as values independent of line selected.
 Aba = 16.9      # Einstein coefficient for spontaneous emission, s^-1;
                 # using van de Meerakker et al, 2005
                 # alt value: 14.176 s^-1 from Tsuji et al, 2000
@@ -55,19 +61,27 @@ Acb = 5300 #for A2Sigma+(v'=0)-->X2Pi(v"=1) Copeland (1987). Really, we'd
 Aca = 1.45e6 #s-1, for A2Sigma+(v'=0)-->X2Pi(v"=0), German (1975)
 # No c<--a laser, so B coefficients not applicable.
 
-# rotational relaxation
+## Rotational relaxation
+# Define in terms of depopulation rate of rotational level of interest. Model
+# also needs to include repopulation rate such that thermal distribution is
+# reached at equilibrium.
 rrout = np.array([7.72e-10,7.72e-10, 4.65e-10])
 # Smith and Crosley, 1990 model rates. Undifferentiated by quencher or v.
+# TODO Use results of better lit search (90s-00s lit) to change this rate and
+# also provide a lambda doublet relaxation rate (also fast on same order of
+# magnitude).
 
-# Thermal rotational distribution
-# assume for now dealing with N"=1.
-rotfrac_a = 0.199104 # taken from LIFBASE, 296 K thermal distribution, both halves of lambda doublet
+## Thermal rotational distribution
+# TODO make this calculated for each set of N. Assume for now dealing with N"=1.
+rotfrac_a = 0.199104 # taken from LIFBASE, 296 K thermal distribution, both
+# halves of lambda doublet
 rotfrac_b = 0.192688 # this row and previous: N(F1e+f) for J=1.5
 rotfrac_c = 0.130170 # v'=1, N(F1) for J=1.5 + N(F2) for J=0.5
 rotfrac = np.array([rotfrac_a,rotfrac_b,rotfrac_c])
 
 ## HITRAN data for 3407 cm^-1 IR transition
-## v = 0 --> v = 1, J = 4.5 --> J = 3.5
+# v = 0 --> v = 1, J = 4.5 --> J = 3.5
+# loadHITRAN automates extracting these values from arbitrary IR OH line
 
 g_air = .053    # air-broadened HWHM, cm^-1 atm^-1 at 296K
 
@@ -83,8 +97,9 @@ n_air = .66    # coeff of temp dependence of air-broadened half-width
 # in n_air: 1 ('default')
 # in air-pressure shift: 0 ('unreported') -- value given as 0
 
-## Laser operating parameters
-
+### Laser operating parameters
+# No longer call these particular values in popmodel KineticsRun calcs. Do use
+# spec_intensity function, though.
 temp = 296.    # temperature, K. All HITRAN data assumes 296K!
 
 beam_diam_IR = 5e-3    # beam diameter, m
@@ -138,7 +153,7 @@ quenchb = kqb * Q # s^-1
 kqch2o = 68.0e-11 # Wysong et al. 1990, v'=0
 kqco2 = 13.5e-11 # Wysong et al. 1990, v'=0
 kqcn2 = 1.9e-11 # Copeland et al. 1985, v'=0, N'=3 (other N available -- gets smaller with bigger N)
-kqc = kqavg(kqch2o,kqco2,kqch2o,xh2o)
+kqc = kqavg(kqcn2,kqco2,kqch2o,xh2o)
 
 quenchc = kqc * Q # s^-1
 

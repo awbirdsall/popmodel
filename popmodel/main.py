@@ -532,13 +532,17 @@ class KineticsRun(object):
         '''
 
         # Define parameters from OH literature
+        # TODO remove definition of time-invariant constants from dN. Define as
+        # attributes of KineticsRun instance instead.
         Acb = oh.Acb # use single c --> b Einstein coefficient
         Aca = oh.Aca # use single c --> a Einstein coefficient
-        kqb = oh.kqb # use single vibrational quenching rate from b
-        kqc = oh.kqc # use single electronic quenching rate from c
+        # vibrational quenching rate from b:
+        kqb = oh.kqavg(oh.kqbn2,oh.kqbo2,oh.kqbh2o,self.detcell['xh2o'])
+        # vibrational quenching rate from c:
+        kqc = oh.kqavg(oh.kqcn2,oh.kqco2,oh.kqch2o,self.detcell['xh2o'])
         rrout = oh.rrout # rotational relaxation
-        # use three unified rotational level depopulation rates: one each for
-        # a, b and c RET (with a = b following Smith and Crosley, 1990 model)
+        # use three rotational level depopulation rates: one each for a, b and
+        # c RET (with a = b following Smith and Crosley, 1990 model)
 
         # Define parameters dependent on line selected in KineticsRun:
         Bab = self.hline['Bab']
