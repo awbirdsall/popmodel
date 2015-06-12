@@ -778,6 +778,21 @@ class KineticsRun(object):
             ax0.axvline(self.sweep.las_bins[-1],ls='--')
         plt.show()
 
+    def savecsv(self, csvout):
+        '''save csv of 3-level system populations and time values
+
+        first column is time, next three columns are populations of a, b and
+        c in state of interest.'''
+
+        if hasattr(self,'abcpop')==False and hasattr(self,'N')==True:
+            self.abcpop = np.empty((np.size(self.tbins),self.nlevels,2))
+            self.abcpop[:,:,0]=self.N[:,:,0:-1].sum(2)
+            self.abcpop[:,:,1]=self.N[:,:,-1]
+        timeseries = k.tbins[:, np.newaxis] # bulk out so ndim = 2
+        abcpop_slice = self.abcpop[:,:,0] # slice along states of interest
+        np.savetxt(args.output,np.hstack((timeseries,abcpop_slice)),
+                delimiter = ",", fmt="%.6e")
+
     def saveOutput(self,file):
         '''Save result of solveode to npz file.
         
@@ -903,9 +918,6 @@ if __name__ == "__main__":
             detcell=par['det-cell'],
             irline=par['ir-line'])
     k.runmodel(args.hitfile,args.logfile,args.output,args.image)
+
     if args.output:
-        if hasattr(k,'abcpop')==False and hasattr(k,'N')==True:
-            self.abcpop = np.empty((np.size(self.tbins),self.nlevels,2))
-            self.abcpop[:,:,0]=self.N[:,:,0:-1].sum(2)
-            self.abcpop[:,:,1]=self.N[:,:,-1]
-        np.savetxt(args.output,k.abcpop[:,:,0])
+        k.savecsv(args.output)
