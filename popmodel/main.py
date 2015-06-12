@@ -35,7 +35,6 @@ import logging
 import ConfigParser
 import argparse
 import yaml
-import sys
 try:
     from yaml import CLoader as Loader
 except ImportError:
@@ -45,15 +44,12 @@ except ImportError:
 # need to initialize here AND in each class/submodule
 logger = logging.getLogger('popmodel')
 logger.setLevel(logging.INFO)
-# console handler always runs
+# console handler always runs (optional logfile set up in __main__ code)
 ch = logging.StreamHandler()
 ch.setLevel(logging.INFO)
 formatter = logging.Formatter('%(levelname)s:%(name)s:%(message)s')
 ch.setFormatter(formatter)
 logger.addHandler(ch)
-# print ch.stream
-# print logger.handlers
-# logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s',datefmt='%m/%d/%Y %I:%M:%S %p')
 
 class Sweep(object):
     '''
@@ -255,9 +251,10 @@ class Abs(object):
 class KineticsRun(object):
     '''Full model of OH population kinetics: laser, feature and populations.
     
-    Has single instance of Sweep, describing laser dithering, and of Abs,
-    describing absorption feature. Sweep is made in __init__, while Abs is made
-    after the HITRAN file is imported and the absorption feature selected.
+    If IR laser is swept, has single instance of Sweep, describing laser
+    dithering, and of Abs, describing absorption feature. Sweep is made in
+    __init__, while Abs is made after the HITRAN file is imported and the
+    absorption feature selected.
     '''
     def __init__(self, irlaser, sweep, uvlaser, odepar, detcell, irline):
         '''Initizalize KineticsRuns using dictionaries of input parameters.
@@ -266,6 +263,7 @@ class KineticsRun(object):
         parameters.yaml) and passed in from the command line.
         '''
         self.logger = logging.getLogger('popmodel.KineticsRun')
+
         # detection cell conditions
         self.detcell = detcell
         self.detcell['ohtot'] = atm.press_to_numdens(detcell['press'],
@@ -539,13 +537,23 @@ class KineticsRun(object):
         kqb = oh.kqb # use single vibrational quenching rate from b
         kqc = oh.kqc # use single electronic quenching rate from c
 
-        # Define parameters inherent to laser operation
-        Lab = oh.spec_intensity(self.irlaser['power'],
-                np.pi*(self.irlaser['diam']*0.5)**2,self.irlaser['bandwidth'])
-        Lbc = oh.spec_intensity(self.uvlaser['power'],
-                np.pi*(self.uvlaser['diam']*0.5)**2,self.uvlaser['bandwidth'])
-        pulsewidth_UV = self.uvlaser['pulse']
+        # calculate laser intensities in appropriate units
+        def intensity(laser):
+            '''Calculate spec intensity of laser at given time.
 
+            Assumes total integration time less than rep rate.
+            '''
+            if not(laser['pulse']) or (t>laser['delay'] and
+                    t<laser['pulse']+laser['delay']):
+                area = np.pi*(laser['diam']*0.5)**2
+                L = oh.spec_intensity(laser['power'],area,laser['bandwidth'])
+            else:
+                L = 0
+            return L
+
+        Lab = intensity(self.irlaser)
+        Lbc = intensity(self.uvlaser)
+        # print Lbc
         # Define parameters dependent on line selected in KineticsRun:
         Bab = self.hline['Bab']
         Bba = self.hline['Bba']
@@ -554,7 +562,7 @@ class KineticsRun(object):
         Q = atm.press_to_numdens(self.detcell['press'], self.detcell['temp']) # quencher conc
 
         # Represent position of IR laser with Lab_sweep
-        # smaller integration matrix with lumpsolve:
+        # smaller integration matrix with lumpsolve (under development):
         if self.odepar['lumpsolve']:
             Lab_sweep=np.array([Lab,0])
 
@@ -564,7 +572,7 @@ class KineticsRun(object):
             Lab_sweep=np.zeros(num_int_bins)
             Lab_sweep[voigt_pos]=Lab
 
-        else: # no sweep, laser always on single bin of entire line
+        else: # no sweep, laser always at single bin of entire line
             Lab_sweep = np.array([Lab, 0, 0])
 
         # reshape y back into form where each nested 1D array contains all
@@ -624,13 +632,6 @@ class KineticsRun(object):
 
         # if UV laser calcs are on, a little more to do:
         else:
-            # Pulse the UV (b to c) laser (assume total time < rep rate):
-            if t>self.uvlaser['delay'] and \
-            t<pulsewidth_UV+self.uvlaser['delay']:
-                Lbc=Lbc
-            else:
-                Lbc = 0
-
             # c<--b processes:
             absorb_bc = Bbc * Lbc * y[1]
 
@@ -648,7 +649,7 @@ class KineticsRun(object):
                 - quench_b + spont_emit_cb
             dN2 = - spont_emit_cb + absorb_bc - spont_emit_ca - quench_c \
                 - stim_emit_cb
-
+            # logger.info(dN2)
             intermediate = np.array([dN0, dN1, dN2])
 
             rrvalues = np.empty_like(intermediate)
@@ -685,10 +686,9 @@ class KineticsRun(object):
             return result
 
         
-    def plotpops(self,
-        title='Relative population in vibrationally excited state',
-        yl='Fraction of total OH', pngout = None):
-        '''Given solution N to solveode, plot 'b' state population over time.
+    def plotpops(self, title='excited state population', yl='b state pop',
+            pngout = None):
+        '''For solved KineticsRun, plot excited state population over time.
 
         Requires:
         -either 'abcpop' or 'N' (to make 'abcpop') from solveode input
@@ -701,7 +701,11 @@ class KineticsRun(object):
 
         yl : str
         Y-axis label to display.
+
+        pngout : str
+        filename to save PNG output. Displays plot if not given.
         '''
+        # make abcpop array if not already calculated
         if hasattr(self,'abcpop')==False and hasattr(self,'N')==False:
             logger.warning('need to run solveode first!')
             return
@@ -709,8 +713,26 @@ class KineticsRun(object):
             self.abcpop = np.empty((np.size(self.tbins),self.nlevels,2))
             self.abcpop[:,:,0]=self.N[:,:,0:-1].sum(2)
             self.abcpop[:,:,1]=self.N[:,:,-1]
+        
+        fig, (ax0) = plt.subplots()
+        ax0.plot(self.tbins*1e6, self.abcpop[:,1,0]/self.detcell['ohtot'],
+                'b-',label='b state pop')
 
-        self.plotvslaser(self.abcpop[:,1,0]/self.detcell['ohtot'],title,yl,pngout)
+        if self.nlevels == 3:
+            ax1 = ax0.twinx()
+            ax1.plot(self.tbins*1e6,
+                    self.abcpop[:,2,0]/self.detcell['ohtot'], 'r-')
+            ax1.set_ylabel('c state pop')
+            ax0.plot(0,0,'r',label='c state pop') # dummy line for legend
+            fig.subplots_adjust(right=0.9)
+
+        ax0.set_title(title)
+        ax0.set_ylabel(yl)
+        ax0.legend()
+        if pngout:
+            fig.savefig(pngout)
+        else:
+            plt.show()    
 
     def plotvslaser(self,func,title='plot',yl='y axis',pngout=None):
         '''Make arbitrary plot in time with laser sweep as second plot
@@ -725,6 +747,9 @@ class KineticsRun(object):
 
         yl : str
         Y-axis label to display.
+
+        pngout : str
+        filename to save PNG output. Displays plot if not given.
         '''
         if hasattr(self,'abcpop')==False and hasattr(self,'N')==False:
             logger.warning('need to run solveode first!')
@@ -790,7 +815,7 @@ class KineticsRun(object):
             self.abcpop[:,:,1]=self.N[:,:,-1]
         timeseries = k.tbins[:, np.newaxis] # bulk out so ndim = 2
         abcpop_slice = self.abcpop[:,:,0] # slice along states of interest
-        np.savetxt(args.output,np.hstack((timeseries,abcpop_slice)),
+        np.savetxt(csvout,np.hstack((timeseries,abcpop_slice)),
                 delimiter = ",", fmt="%.6e")
 
     def saveOutput(self,file):
@@ -882,17 +907,24 @@ def sweepdepen(file):
 ##############################################################################
 # command line use: HITFILE PARAMETERS [-l] LOGFILE [-o] OUTPUT -i IMAGE
 if __name__ == "__main__":
-    '''Run from command line passing hitran par file and parameters yaml file
-    as arguments.
+    '''Run from command line, given hitran par file and parameters yaml file.
     '''
+
     parser = argparse.ArgumentParser(description=("integrate two- or "+
     "three-level LIF system for given HITRAN file and set of parameters"))
+
     # HITFILE PARAMETERS [-l] LOGFILE [-o] OUTPUT -i IMAGE
     parser.add_argument("hitfile", help="Hitran file")
     parser.add_argument("parameters", help="YAML parameter file")
-    parser.add_argument("-l", "--logfile", help="log file")
-    parser.add_argument("-o", "--output", help="3-state output csv")
-    parser.add_argument("-i", "--image", help="output png image")
+
+    # loop through argdict for optional parameters
+    argdict = {"logfile":"log file","output":"3-state output csv",
+    "image":"output png image"}
+    for arg,descr in argdict.iteritems():
+        shortflag = "-" + arg[0]
+        longflag = "--" + arg
+        parser.add_argument(shortflag, longflag, help=descr)
+
     args = parser.parse_args()
 
     # set up FileHandler for logging to file if requested
@@ -903,7 +935,11 @@ if __name__ == "__main__":
             '%(name)s:%(message)s')
         fh.setFormatter(logfile_formatter)
         logger.addHandler(fh)
-        logger.info('writing logfile to '+args.logfile)
+
+    # write to log each output toggled on
+    for arg, descr in argdict.iteritems():
+        if getattr(args, arg):
+            logger.info('saving '+descr+' to '+getattr(args,arg))
 
     # use parameter yaml file to set parameters 
     with open(args.parameters, 'r') as f:
