@@ -536,6 +536,20 @@ class KineticsRun(object):
         Aca = oh.Aca # use single c --> a Einstein coefficient
         kqb = oh.kqb # use single vibrational quenching rate from b
         kqc = oh.kqc # use single electronic quenching rate from c
+        # rotational relaxation
+        # convention: positive = gain pop in rot state of interest
+        rrout = np.array([7.72e-10,7.72e-10, 4.65e-10])
+        # Values from Smith and Crosley, 1990. Undifferentiated for quencher
+        # or vibrational state
+
+        # Define parameters dependent on line selected in KineticsRun:
+        Bab = self.hline['Bab']
+        Bba = self.hline['Bba']
+        Bbc = self.hline['Bbc']
+        Bcb = self.hline['Bcb']
+
+        # quencher conc
+        Q = atm.press_to_numdens(self.detcell['press'], self.detcell['temp'])
 
         # calculate laser intensities in appropriate units
         def intensity(laser):
@@ -553,13 +567,6 @@ class KineticsRun(object):
 
         Lab = intensity(self.irlaser)
         Lbc = intensity(self.uvlaser)
-        # print Lbc
-        # Define parameters dependent on line selected in KineticsRun:
-        Bab = self.hline['Bab']
-        Bba = self.hline['Bba']
-        Bbc = self.hline['Bbc']
-        Bcb = self.hline['Bcb']
-        Q = atm.press_to_numdens(self.detcell['press'], self.detcell['temp']) # quencher conc
 
         # Represent position of IR laser with Lab_sweep
         # smaller integration matrix with lumpsolve (under development):
@@ -588,15 +595,14 @@ class KineticsRun(object):
         quench_b = kqb * Q * y[1]
 
         # ...rotational relaxation:
-        # convention: positive = gain pop in rot state of interest
-        rrout = np.array([7.72e-10,7.72e-10, 4.65e-10])
-        # Values from Smith and Crosley, 1990. Undifferentiated for quencher
-        # or vibrational state
         rrin = rrout * oh.rotfrac/(1-oh.rotfrac)
 
+        # calculate rotational state distribution that is relaxed to
         if self.odepar['redistequil']:
+            # equilibrium distribution in ground state
             fdist = (self.N0[0,0:-1]/self.N0[0,0:-1].sum())
         elif y[0,0:-1].sum() != 0:
+            # instantaneous distribution in ground state
             fdist = (y[0,0:-1]/y[0,0:-1].sum())
         else:
             fdist = 0
@@ -609,26 +615,22 @@ class KineticsRun(object):
 
             rrvalues = np.empty_like(intermediate)
             if self.odepar['rotequil']:
+                # include RET relaxation in/out rot level to distribution
+                # defined by fdist. Assume can use v"=0 fdist for 'b' too.
                 rrvalues[0,0:-1] = -y[0,0:-1]*Q*rrout[0] \
                 +y[0,-1]*Q*rrin[0]*fdist
-                # assuming repopulation from other rotational levels flows to 
-                # rot level of interest based on equilibrium distribution
                 rrvalues[0,-1] = y[0,0:-1].sum()*Q*rrout[0] \
                 -y[0,-1]*Q*rrin[0]
                 
                 if y[1,0:-1].sum() != 0: # avoid divide by zero error
                     rrvalues[1,0:-1] = -y[1,0:-1]*Q*rrout[1]\
                         +y[1,-1]*Q*rrin[1]*fdist
-                    # approx equilibrium distribution same as v"=0
                     rrvalues[1,-1] = y[1,0:-1].sum()*Q*rrout[1] \
                         -y[1,-1]*Q*rrin[1]
                 else:
                     rrvalues[1,:] = 0
             else:
                 rrvalues.fill(0)
-            result = (intermediate + rrvalues).ravel()
-
-            return result
 
         # if UV laser calcs are on, a little more to do:
         else:
@@ -649,22 +651,20 @@ class KineticsRun(object):
                 - quench_b + spont_emit_cb
             dN2 = - spont_emit_cb + absorb_bc - spont_emit_ca - quench_c \
                 - stim_emit_cb
-            # logger.info(dN2)
             intermediate = np.array([dN0, dN1, dN2])
 
             rrvalues = np.empty_like(intermediate)
             if self.odepar['rotequil']:
                 rrvalues[0,0:-1] = -y[0,0:-1]*Q*rrout[0] \
                     + y[0,-1]*Q*rrin[0]*fdist
-                # assuming repopulation from other rotational levels flows to 
-                # rot level of interest based on equilibrium distribution
+                # include RET relaxation in/out rot level to distribution
+                # defined by fdist. Assume can use v"=0 fdist for b and c too.
                 rrvalues[0,-1] = y[0,0:-1].sum()*Q*rrout[0] \
                     - y[0,-1]*Q*rrin[0]
                 
                 if y[1,0:-1].sum() != 0: # avoid divide by zero error
                     rrvalues[1,0:-1] = -y[1,0:-1]*Q*rrout[1] \
                         + y[1,-1]*Q*rrin[1]*fdist
-                    # approx equilibrium distribution same as v"=0
                     rrvalues[1,-1] = y[1,0:-1].sum()*Q*rrout[1] \
                         - y[1,-1]*Q*rrin[1]
                 else:
@@ -681,9 +681,9 @@ class KineticsRun(object):
             else:
                 rrvalues.fill(0)
 
-            result = (intermediate + rrvalues).ravel()
-            # flatten to 1D array: 1st all 'a' states entries, then 'b', ...:
-            return result
+        result = (intermediate + rrvalues).ravel()
+        # flatten to 1D array: 1st all 'a' states entries, then 'b', ...:
+        return result
 
         
     def plotpops(self, title='excited state population', yl='b state pop',
