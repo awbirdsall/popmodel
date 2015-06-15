@@ -344,7 +344,15 @@ class KineticsRun(object):
         Outputs:
         --------
         N : ndarray
-        Relative population of 'a', 'b' (and 'c') states over integration time.    
+        Relative population of 'a', 'b' (and 'c') states over integration time.
+        Three-dimensional array: first dimension time, second dimension a/b/c
+        state, third dimension subpopulations within state.
+        
+        Subpopulations defined, in order, as (1) bins excited individually by
+        swept IR laser (one bin if IR laser sweep off), (2) population in line
+        wings not reached by swept IR laser (one always empty bin if IR laser
+        sweep off), (3) other half of lambda doublet for a/b PI states, (4)
+        other rotational levels within same vibrational level.
         '''
 
         logger.info('solveode: integrating at {} torr, {} K, OH in cell, '
@@ -352,6 +360,7 @@ class KineticsRun(object):
                 self.detcell['ohtot']))
         tl = self.odepar['inttime'] # total int time
 
+        # set-up steps only required if IR laser is swept:
         if self.dosweep:
             logger.info('solveode: sweep mode: {}'.format(self.sweep.stype))
             self.makeAbs()
@@ -371,7 +380,8 @@ class KineticsRun(object):
 
             # define local variables for convenience
             num_las_bins=np.size(self.sweep.las_bins)
-            num_int_bins=num_las_bins+2 # +2 = outside laser sweep, other rot
+            num_int_bins=num_las_bins+3 # +3 = outside laser sweep, other
+            # lambda doublet, other rot
             tsweep = self.sweep.tsweep
             stype = self.sweep.stype
 
@@ -391,7 +401,8 @@ class KineticsRun(object):
 
         else: # single 'bin' excited by laser
             num_las_bins=1
-            num_int_bins=3
+            num_int_bins=num_las_bins+3 # +3 = outside laser sweep, other
+            # lambda doublet, other rot
             dt = self.odepar['dt'] # s
             self.tbins = np.arange(0, tl+dt, dt)
             t_steps = np.size(self.tbins)
@@ -399,35 +410,36 @@ class KineticsRun(object):
             self.sweepfunc= np.zeros(np.size(tindex))
 
         # set up ODE
-        self.time_progress=0 # laspos looks at this to choose sweepfunc index.
 
-        # Create initial state N0, all pop distributed in ground state
         if self.odepar['withoutUV']:
             self.nlevels=2
         else:
             self.nlevels=3    
 
+        # Create initial state N0, all pop distributed in ground state
         # assume for now dealing with N"=1.
         self.N0 = np.zeros((self.nlevels,num_int_bins))
         if self.dosweep:
-            self.N0[0,0:-2] = self.abfeat.intpop * oh.rotfrac[0] \
+            self.N0[0,0:-3] = self.abfeat.intpop * oh.rotfrac[0] \
             * self.detcell['ohtot']
-            self.N0[0,-2] = (self.abfeat.pop.sum() - self.abfeat.intpop.sum()) \
+            self.N0[0,-3] = (self.abfeat.pop.sum() - self.abfeat.intpop.sum()) \
                 *oh.rotfrac[0] * self.detcell['ohtot'] # pop outside laser sweep
         else:
             self.N0[0,0] = self.detcell['ohtot'] * oh.rotfrac[0]
-            self.N0[0,-2] = 0 # no population within rot level isn't excited. 
-        self.N0[0,-1] = self.detcell['ohtot'] * (1-oh.rotfrac[0]) # other rot levels
+            self.N0[0,-3] = 0 # no population within rot level isn't excited. 
+        self.N0[0,-2] = 0 # other half of lambda doublet
+        self.N0[0,-1] = self.detcell['ohtot'] * (1-oh.rotfrac[0]) # other rot
 
         # Create array to store output at each timestep, depending on keepN
         # N stores a/b/c state pops in each bin over time
-        # abcpop stores a/b/c pops, tracks in or out rot level of interest.
+        # abcpop stores a/b/c pops, tracks in or out rot/lambda of interest.
         if self.odepar['keepN']:
             self.N=np.empty((t_steps,self.nlevels,num_int_bins))
             self.N[0] = self.N0
         else:
             self.abcpop=np.empty((t_steps,self.nlevels,2))
-            self.abcpop[0]=np.array([self.N0[:,0:-1].sum(1),self.N0[:,-1]]).T
+            self.abcpop[0]=np.array([self.N0[:,0:-2].sum(1),
+                self.N0[:,-2:].sum(1)]).T
 
         # Initialize scipy.integrate.ode object, lsoda method
         r = ode(self.dN)
@@ -442,11 +454,11 @@ class KineticsRun(object):
         logger.info('--------------------------')
 
         # Solve ODE
+        self.time_progress=0 # laspos looks at this to choose sweepfunc index.
         old_complete=0 # tracks integration progress for logger
         while r.successful() and r.t < tl-dt:
             # display progress
             complete = r.t/tl
-
             if floor(complete*100/10)!=floor(old_complete*100/10):
                 logger.info(' {0:>3.0%} | {1:8.2g} | {2:7.0f} '
                     .format(complete,r.t,self.sweepfunc[self.time_progress]))
@@ -461,8 +473,8 @@ class KineticsRun(object):
             if self.odepar['keepN'] == True:
                 self.N[entry] = nextstepN
             else:
-                self.abcpop[entry] = np.array([nextstepN[:,0:-1].sum(1),
-                    nextstepN[:,-1]]).T
+                self.abcpop[entry] = np.array([nextstepN[:,0:-2].sum(1),
+                    nextstepN[:,-2:].sum(1)]).T
 
             self.time_progress+=1
 
@@ -506,7 +518,7 @@ class KineticsRun(object):
         '''
         voigt_pos = self.sweepfunc[self.time_progress]
         num_las_bins=np.size(self.sweep.las_bins)
-        num_int_bins=num_las_bins+2
+        num_int_bins=num_las_bins+3
         if voigt_pos+1 > num_las_bins:
             logger.warning('laspos: voigt_pos out of range')
         return voigt_pos
@@ -577,12 +589,13 @@ class KineticsRun(object):
 
         elif self.dosweep:
             voigt_pos=self.laspos()
-            num_int_bins=np.size(self.sweep.las_bins)+2
+            num_int_bins=np.size(self.sweep.las_bins)+3
             Lab_sweep=np.zeros(num_int_bins)
             Lab_sweep[voigt_pos]=Lab
 
         else: # no sweep, laser always at single bin of entire line
-            Lab_sweep = np.array([Lab, 0, 0])
+            num_int_bins = 1 + 3
+            Lab_sweep = np.array([Lab, 0, 0, 0])
 
         # reshape y back into form where each nested 1D array contains all
         # populations in given energy level:
@@ -599,9 +612,10 @@ class KineticsRun(object):
         # ...rotational relaxation:
         rrin = rrout * oh.rotfrac/(1-oh.rotfrac)
 
-        # calculate rotational state distribution that is relaxed to
+        # calculate fdist, distribution within rotational state (including
+        # lambda doublet) that RET relaxes to
         if self.odepar['redistequil']:
-            # equilibrium distribution in ground state
+            # equilibrium distribution in ground state, as calced for N0
             fdist = (self.N0[0,0:-1]/self.N0[0,0:-1].sum())
         elif y[0,0:-1].sum() != 0:
             # instantaneous distribution in ground state
@@ -636,15 +650,19 @@ class KineticsRun(object):
 
         # if UV laser calcs are on, a little more to do:
         else:
+            # Lbc only excites population in particular rot/lambda level
+            Lbc_vec = np.zeros_like(y[0])
+            Lbc_vec[0:-2].fill(Lbc)
+
             # c<--b processes:
-            absorb_bc = Bbc * Lbc * y[1]
+            absorb_bc = Bbc * Lbc_vec * y[1]
 
             # c-->a processes:
             spont_emit_ca = Aca * y[2]
             quench_c = kqc * Q * y[2]
 
             # c-->b processes:
-            stim_emit_cb = Bcb * Lbc * y[2]
+            stim_emit_cb = Bcb * Lbc_vec * y[2]
             spont_emit_cb = Acb * y[2]
 
             dN0 = - absorb_ab + stim_emit_ba + spont_emit_ca + quench_b \
@@ -713,8 +731,8 @@ class KineticsRun(object):
             return
         elif hasattr(self,'abcpop')==False and hasattr(self,'N')==True:
             self.abcpop = np.empty((np.size(self.tbins),self.nlevels,2))
-            self.abcpop[:,:,0]=self.N[:,:,0:-1].sum(2)
-            self.abcpop[:,:,1]=self.N[:,:,-1]
+            self.abcpop[:,:,0]=self.N[:,:,0:-2].sum(2)
+            self.abcpop[:,:,1]=self.N[:,:,-2:].sum(2)
         
         fig, (ax0) = plt.subplots()
         ax0.plot(self.tbins*1e6, self.abcpop[:,1,0]/self.detcell['ohtot'],
@@ -758,8 +776,8 @@ class KineticsRun(object):
             return
         elif hasattr(self,'abcpop')==False and self.odepar['keepN']:
             self.abcpop = np.empty((np.size(self.tbins),self.nlevels,2))
-            self.abcpop[:,:,0]=self.N[:,:,0:-1].sum(2)
-            self.abcpop[:,:,1]=self.N[:,:,-1]
+            self.abcpop[:,:,0]=self.N[:,:,0:-2].sum(2)
+            self.abcpop[:,:,1]=self.N[:,:,-2:].sum(2)
         
         fig, (ax0, ax1) = plt.subplots(nrows=2, sharex=True)
         fig.subplots_adjust(hspace=.3)
@@ -813,8 +831,8 @@ class KineticsRun(object):
 
         if hasattr(self,'abcpop')==False and hasattr(self,'N')==True:
             self.abcpop = np.empty((np.size(self.tbins),self.nlevels,2))
-            self.abcpop[:,:,0]=self.N[:,:,0:-1].sum(2)
-            self.abcpop[:,:,1]=self.N[:,:,-1]
+            self.abcpop[:,:,0]=self.N[:,:,0:-2].sum(2)
+            self.abcpop[:,:,1]=self.N[:,:,-2:].sum(2)
         timeseries = k.tbins[:, np.newaxis] # bulk out so ndim = 2
         abcpop_slice = self.abcpop[:,:,0] # slice along states of interest
         np.savetxt(csvout,np.hstack((timeseries,abcpop_slice)),
