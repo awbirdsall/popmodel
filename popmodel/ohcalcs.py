@@ -71,6 +71,9 @@ rrout = np.array([7.72e-10,7.72e-10, 4.65e-10])
 # also provide a lambda doublet relaxation rate (also fast on same order of
 # magnitude).
 
+## Lambda doublet relaxation
+lrout = 4.5e-10 # ballpark placeholder
+
 ## Thermal rotational distribution
 # TODO make this calculated for each set of N. Assume for now dealing with N"=1.
 rotfrac_a = 0.199104 # taken from LIFBASE, 296 K thermal distribution, both
@@ -315,6 +318,21 @@ def voigt(xarr,amp,xcen,sigma,gamma,normalized=False):
         return V / (sigma*np.sqrt(2*np.pi))
     else:
         return V
+
+def rotq(B,T):
+    '''calculate rotational partition function.
+
+    B : float
+    rotational constant
+
+    T : float
+    temperature
+    '''
+    return (kb*T) / (h*c*B)
+
+def rotpop():
+    '''calculate equilibrium population in rotational state
+    '''
 
 ################################
 
