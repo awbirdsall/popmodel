@@ -67,20 +67,60 @@ Aca = 1.45e6 #s-1, for A2Sigma+(v'=0)-->X2Pi(v"=0), German (1975)
 # reached at equilibrium.
 rrout = np.array([7.72e-10,7.72e-10, 4.65e-10])
 # Smith and Crosley, 1990 model rates. Undifferentiated by quencher or v.
-# TODO Use results of better lit search (90s-00s lit) to change this rate and
-# also provide a lambda doublet relaxation rate (also fast on same order of
-# magnitude).
 
 ## Lambda doublet relaxation
 lrout = 4.5e-10 # ballpark placeholder
 
 ## Thermal rotational distribution
-# TODO make this calculated for each set of N. Assume for now dealing with N"=1.
-rotfrac_a = 0.199104 # taken from LIFBASE, 296 K thermal distribution, both
-# halves of lambda doublet
-rotfrac_b = 0.192688 # this row and previous: N(F1e+f) for J=1.5
-rotfrac_c = 0.130170 # v'=1, N(F1) for J=1.5 + N(F2) for J=0.5
-rotfrac = np.array([rotfrac_a,rotfrac_b,rotfrac_c])
+# Use LIFBASE-calculated thermal distributions at 296 K for both halves of each
+# lambda doublet -- can later divide in half to calculate population in each
+# half of lambda doublet (equal e and f).
+# X(v"=0) rotational levels
+# F1 term (PI_3/2) where J = N + 0.5 (starts with N=1)
+rotfrac_a1 = np.array([[0.1147102,
+                      0.1373055,
+                      0.1333955,
+                      0.1108903,
+                      0.0807381,
+                      0.0521280,
+                      0.0300671,
+                      0.0155687]])
+# F2 term (PI_1/2) where J = N - 0.5 (starts with N=1)
+rotfrac_a2 = np.array([[0.0303408,
+                       0.0520817,
+                       0.0605903,
+                       0.0566615,
+                       0.0449620,
+                       0.0310304,
+                       0.0188811,
+                       0.0102155]])
+# X(v"=1) rotational levels
+# F1 term
+rotfrac_b1 = np.array([[0.1118301,
+                       0.1346591,
+                       0.1319314,
+                       0.1108789,
+                       0.0818258,
+                       0.0536861,
+                       0.0315495,
+                       0.0166880]])
+# F2 term
+rotfrac_b2 = np.array([[0.0295226,
+                       0.0509050,
+                       0.0596629,
+                       0.0563731,
+                       0.0453257,
+                       0.0317841,
+                       0.0197044,
+                       0.0108914]])
+# to avoid digging into mess of calculating populations for A_SIGMA just assume
+# distribution is more or less like X(v"=0). Tenuous connection to reality.
+rotfrac_c = rotfrac_a1+rotfrac_a2
+# build rotfrac dict for extraction in main.py
+rotfrac = {}
+rotfrac['a'] = np.concatenate((rotfrac_a1,rotfrac_a2))
+rotfrac['b'] = np.concatenate((rotfrac_b1,rotfrac_b2))
+rotfrac['c'] = rotfrac_c[0]
 
 ## HITRAN data for 3407 cm^-1 IR transition
 # v = 0 --> v = 1, J = 4.5 --> J = 3.5
@@ -94,7 +134,7 @@ n_air = .66    # coeff of temp dependence of air-broadened half-width
 
 # uncertainties in HITRAN data for this transition:
 # in wavenumber: 3 ('0.001 - 0.01')
-# in intensity: 4 ('10-20%'')
+# in intensity: 4 ('10-20%')
 # in g-air: 2 ('avg or estimate')
 # in g-self: 0 ('unreported')
 # in n_air: 1 ('default')
@@ -319,25 +359,9 @@ def voigt(xarr,amp,xcen,sigma,gamma,normalized=False):
     else:
         return V
 
-def rotq(B,T):
-    '''calculate rotational partition function.
-
-    B : float
-    rotational constant
-
-    T : float
-    temperature
-    '''
-    return (kb*T) / (h*c*B)
-
-def rotpop():
-    '''calculate equilibrium population in rotational state
-    '''
-
 ################################
 
 ## Executes when running from within module
 
 if __name__ == "__main__":
-
-    print('%g' % peak_power_UV)
+    print('ohcalcs is accessory, use main')

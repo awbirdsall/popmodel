@@ -5,7 +5,7 @@ ir-laser:
     bandwidth: 1.0e+6 # Hz
     power: 3. # W
     pulse: 50.e-6 # s or null (for CW)
-    delay: 0.e-6 # s, ODE solver gets crashy if this is non-zero
+    delay: 0.e-6 # s, ODE solver gets crashy if this is non-zero?
 
 # sweeping of narrow-bandwidth IR laser (optional)
 # if dosweep: False, calcs assume ir laser bandwidth perfectly matches abs line
@@ -39,7 +39,7 @@ solve-ode:
         # thermal distribution rather than instantaneous
     lumpsolve: False # developmental idea, not implemented
 
-ir-line: 'P_1(3)ff' # follow label system in loadHITRAN
+ir-line: 'P_1(2)ff' # follow label system in loadHITRAN
 
 uv-line: null # not implemented
 
@@ -66,11 +66,11 @@ rates:
             # gets smaller with bigger N)
         o2: 13.5e-11 # Wysong et al. 1990, v'=0
         h2o: 68.0e-11 # Wysong et al. 1990, v'=0
-    rrout: # rotational relaxation out of single rotational level
+    rrout: # rotational relaxation out of single rotational level (a/b/c)
     # Smith and Crosley, 1990 model rates. Undifferentiated by quencher or v.
-        a: 7.72e-10
-        b: 7.72e-10
-        c: 4.65e-10
-    lrout: # lambda relaxation out of single lambda doublet level
-        a: 4.5e-10 # ballpark value used in Kliner and Farrow 1999 based on lit
-        b: 4.5e-10 # above
+        - 7.72e-10
+        - 7.72e-10
+        - 4.65e-10
+    lrout: # lambda relaxation out of single lambda doublet level (a/b)
+        - 4.5e-10 # ballpark value used in Kliner and Farrow 1999 based on lit
+        - 4.5e-10 # above

@@ -304,21 +304,15 @@ class KineticsRun(object):
         self.rates = rates
         # overwrite following subdictionaries for appropriate format for dN:
         # overall vibrational quenching rate from b:
-        self.rates['kqb'] = oh.kqavg(rates['kqb']['n2'],
+        self.rates['kqb']['tot'] = oh.kqavg(rates['kqb']['n2'],
                 rates['kqb']['o2'],
                 rates['kqb']['h2o'],
                 detcell['xh2o'])
         # vibrational quenching rate from c:
-        self.rates['kqc'] = oh.kqavg(rates['kqc']['n2'],
+        self.rates['kqc']['tot'] = oh.kqavg(rates['kqc']['n2'],
                 rates['kqc']['o2'],
                 rates['kqc']['h2o'],
                 self.detcell['xh2o'])
-        # rotational and lambda doublet depopulation
-        self.rates['rrout'] = np.array([rates['rrout']['a'],
-                        rates['rrout']['b'],
-                        rates['rrout']['c']])
-        self.rates['lrout'] = np.array([rates['lrout']['a'],
-                        rates['lrout']['b']])
 
     def runmodel(self, parfile, logfile=None, output=None, image=None):
         '''run full pipeline from parameters and file to integrated output'''
@@ -343,6 +337,18 @@ class KineticsRun(object):
         self.hline = hpar[lineidx]
         logger.info('chooseline: using {} line at {:.4g} cm^-1'
             .format(self.hline['label'], self.hline['wnum_ab']))
+
+        # extract rotation fraction for a b and c
+        # figure out which 'F1' or 'F2' series that a and b state are:
+        f_a = int(self.hline['label'][2]) - 1
+        if self.hline['label'][3] == '(':
+            f_b = f_a
+        else:
+            f_b = int(self.hline['label'][3]) - 1
+        self.rotfrac = np.array([oh.rotfrac['a'][f_a][self.hline['Na']-1],
+                                 oh.rotfrac['b'][f_b][self.hline['Nb']-1],
+                                 oh.rotfrac['c'][self.hline['Nc']]])
+        logger.info(self.rotfrac)
 
     def makeAbs(self):
         '''Make an absorption profile using self.hline and experimental
@@ -442,15 +448,15 @@ class KineticsRun(object):
         # Create initial state N0, all pop distributed in ground state
         self.N0 = np.zeros((self.nlevels,num_int_bins))
         if self.dosweep:
-            self.N0[0,0:-3] = self.abfeat.intpop * oh.rotfrac[0] \
+            self.N0[0,0:-3] = self.abfeat.intpop * self.rotfrac[0] \
             * self.detcell['ohtot'] / 2
             self.N0[0,-3] = (self.abfeat.pop.sum() - self.abfeat.intpop.sum()) \
-                *oh.rotfrac[0] * self.detcell['ohtot'] / 2 # pop outside laser sweep
+                *self.rotfrac[0] * self.detcell['ohtot'] / 2 # pop outside laser sweep
         else:
-            self.N0[0,0] = self.detcell['ohtot'] * oh.rotfrac[0] / 2
+            self.N0[0,0] = self.detcell['ohtot'] * self.rotfrac[0] / 2
             self.N0[0,-3] = 0 # no population within rot level isn't excited. 
-        self.N0[0,-2] = self.detcell['ohtot'] * oh.rotfrac[0] / 2 # other half of lambda doublet
-        self.N0[0,-1] = self.detcell['ohtot'] * (1-oh.rotfrac[0]) # other rot
+        self.N0[0,-2] = self.detcell['ohtot'] * self.rotfrac[0] / 2 # other half of lambda doublet
+        self.N0[0,-1] = self.detcell['ohtot'] * (1-self.rotfrac[0]) # other rot
 
         # Create array to store output at each timestep, depending on keepN:
         # N stores a/b/c state pops in each bin over time.
@@ -609,10 +615,10 @@ class KineticsRun(object):
 
         # ...b-->a: (spont emission negligible)
         stim_emit_ba = self.hline['Bba'] * Lab_sweep * y[1]
-        quench_b = self.rates['kqb'] * self.Q * y[1]
+        quench_b = self.rates['kqb']['tot']* self.Q * y[1]
 
         # ...rotational relaxation:
-        rrin = self.rates['rrout'] * oh.rotfrac/(1-oh.rotfrac)
+        rrin = self.rates['rrout'] * self.rotfrac/(1-self.rotfrac)
 
         # ...lambda doublet relaxation:
         lrin = self.rates['lrout'] # assume equal energies, equal equilibrium pops
@@ -685,7 +691,7 @@ class KineticsRun(object):
 
             # c-->a processes:
             spont_emit_ca = self.rates['Aca'] * y[2]
-            quench_c = self.rates['kqc'] * self.Q * y[2]
+            quench_c = self.rates['kqc']['tot']* self.Q * y[2]
 
             # c-->b processes:
             stim_emit_cb = self.hline['Bcb'] * Lbc_vec * y[2]
