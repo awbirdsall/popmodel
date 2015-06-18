@@ -1,6 +1,6 @@
 ### parameters used for popmodel calculations, yaml format ###
 
-ir-laser:
+irlaser:
     diam: 5.e-3 # m
     bandwidth: 1.0e+6 # Hz
     power: 3. # W
@@ -20,14 +20,14 @@ sweep:
     avg_step_in_bin: 20.
     factor: 0.1
 
-uv-laser:
+uvlaser:
     diam: 5.e-3 # m
     bandwidth: 7.e+9 # Hz, Schlosser et al 2007
     power: 50.e-3 # W, Schlosser et al. 2007, avg power
     pulse: 75.e-6 # s or null (for CW)
     delay: 25.e-6 # s, huge delay effectively turns off UV
 
-solve-ode:
+odepar:
     keepN: False # if True, and dosweep: True, keeps full N array, lots of mem
     inttime: 2.e-4 # integration time, s
     dt: 1.e-7 # time between each integration point, s. Overridden by
@@ -39,11 +39,11 @@ solve-ode:
         # thermal distribution rather than instantaneous
     lumpsolve: False # developmental idea, not implemented
 
-ir-line: 'P_1(2)ff' # follow label system in loadHITRAN
+irline: 'P_1(2)ff' # follow label system in loadHITRAN
 
-uv-line: null # not implemented
+uvline: null # not implemented
 
-det-cell: # detection cell
+detcell: # detection cell
     press: 2.5 # torr
     temp: 298. # K
     xoh: 0.5e-12 # 0.5 pptv, ballpark (1.2E7 cm^-3 at 760 torr, 296 K)

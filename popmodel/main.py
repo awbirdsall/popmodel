@@ -41,6 +41,7 @@ except ImportError:
     from yaml import Loader # a lot slower sez https://stackoverflow.com/questions/18404441/why-is-pyyaml-spending-so-much-time-in-just-parsing-a-yaml-file
 import pdb
 
+##############################################################################
 # set up logging, follow python logging cookbook
 # need to initialize here AND in each class/submodule
 logger = logging.getLogger('popmodel')
@@ -52,6 +53,50 @@ formatter = logging.Formatter('%(levelname)s:%(name)s:%(message)s')
 ch.setFormatter(formatter)
 logger.addHandler(ch)
 
+##############################################################################
+
+def importyaml(parfile):
+    '''Extract nested dict of parameters from yaml file.
+
+    See sample parameters.yaml file for full structure. Top-level keys are
+    ir-laser, sweep, uv-laser, solve-ode, ir-line, uv-line, det-cell and rates
+    '''
+    with open(parfile, 'r') as f:
+        par = yaml.load(f,Loader=Loader) 
+    return par
+
+def init_logfile(logfile):
+    '''set up FileHandler within logging to write to output file
+    '''
+    fh = logging.FileHandler(logfile)
+    fh.setLevel(logging.INFO)
+    logfile_formatter = logging.Formatter('%(asctime)s:%(levelname)s:'+
+        '%(name)s:%(message)s')
+    fh.setFormatter(logfile_formatter)
+    logger.addHandler(fh)
+
+def main(hitfile,parameters,logfile=None,csvout=None,image=None):
+    '''wrapper to go from command-line inputs to output
+    '''
+    if logfile:
+        init_logfile(logfile)
+    # record to log each output filename
+    argdict = {"log file":logfile,"output csv":csvout,
+            "output png image":image}
+    for (k,v) in argdict.iteritems():
+        if v:
+            logger.info('saving '+k+' to '+v)
+
+    par = importyaml(parameters)
+    k = KineticsRun(**par)
+    k.chooseline(loadHITRAN.processHITRAN(hitfile), k.irline)
+    k.solveode()
+    if csvout:
+        k.savecsv(csvout)
+    if image:
+        k.plotpops(pngout = image)
+
+##############################################################################
 class Sweep(object):
     '''
     Represent sweeping parameters of the laser. Before performing solveode on
@@ -257,7 +302,7 @@ class KineticsRun(object):
     __init__, while Abs is made after the HITRAN file is imported and the
     absorption feature selected.
     '''
-    def __init__(self, irlaser, sweep, uvlaser, odepar, detcell, irline,rates):
+    def __init__(self,irlaser,sweep,uvlaser,odepar,irline,uvline,detcell,rates):
         '''Initizalize KineticsRuns using dictionaries of input parameters.
         
         These parameters can be gathered up in a yaml file (in format of
@@ -265,21 +310,14 @@ class KineticsRun(object):
         '''
         self.logger = logging.getLogger('popmodel.KineticsRun')
 
-        # detection cell conditions
         self.detcell = detcell
         self.detcell['ohtot'] = atm.press_to_numdens(detcell['press'],
                 detcell['temp'])*detcell['xoh']
         # quencher conc
-        self.Q = atm.press_to_numdens(self.detcell['press'], self.detcell['temp'])
-
-        # lasers
+        self.detcell['Q'] = atm.press_to_numdens(self.detcell['press'], self.detcell['temp'])
         self.irlaser = irlaser
         self.uvlaser = uvlaser
-
-        # ODE solver parameter dict
         self.odepar = odepar
-
-        # label for ir line
         self.irline = irline
 
         # Sweep object
@@ -314,21 +352,6 @@ class KineticsRun(object):
                 rates['kqc']['h2o'],
                 self.detcell['xh2o'])
 
-    def runmodel(self, parfile, logfile=None, output=None, image=None):
-        '''run full pipeline from parameters and file to integrated output'''
-
-        # write messages to logfile
-        # if logfile:
-        # Set up IR b<--a absorption profile from HITRAN
-        hfile = loadHITRAN.processHITRAN(parfile)
-        self.chooseline(hfile,self.irline)
-
-        # integrate
-        self.solveode()
-
-        # save image
-        if image:
-            self.plotpops(pngout = image)
 
     def chooseline(self,hpar,label):
         '''Save single line of processed HITRAN file to self.hline.
@@ -348,7 +371,6 @@ class KineticsRun(object):
         self.rotfrac = np.array([oh.rotfrac['a'][f_a][self.hline['Na']-1],
                                  oh.rotfrac['b'][f_b][self.hline['Nb']-1],
                                  oh.rotfrac['c'][self.hline['Nc']]])
-        logger.info(self.rotfrac)
 
     def makeAbs(self):
         '''Make an absorption profile using self.hline and experimental
@@ -615,7 +637,7 @@ class KineticsRun(object):
 
         # ...b-->a: (spont emission negligible)
         stim_emit_ba = self.hline['Bba'] * Lab_sweep * y[1]
-        quench_b = self.rates['kqb']['tot']* self.Q * y[1]
+        quench_b = self.rates['kqb']['tot']* self.detcell['Q'] * y[1]
 
         # ...rotational relaxation:
         rrin = self.rates['rrout'] * self.rotfrac/(1-self.rotfrac)
@@ -648,16 +670,16 @@ class KineticsRun(object):
             if self.odepar['rotequil']:
                 # include RET relaxation in/out rot level to distribution
                 # defined by fdist. Assume can use v"=0 fdist for 'b' too.
-                rrvalues[0,0:-1] = -y[0,0:-1]*self.Q*self.rates['rrout'][0] \
-                +y[0,-1]*self.Q*rrin[0]*fdist
-                rrvalues[0,-1] = y[0,0:-1].sum()*self.Q*rates['rrout'][0] \
-                -y[0,-1]*self.Q*rrin[0]
+                rrvalues[0,0:-1] = -y[0,0:-1]*self.detcell['Q']*self.rates['rrout'][0] \
+                +y[0,-1]*self.detcell['Q']*rrin[0]*fdist
+                rrvalues[0,-1] = y[0,0:-1].sum()*self.detcell['Q']*rates['rrout'][0] \
+                -y[0,-1]*self.detcell['Q']*rrin[0]
                 
                 if y[1,0:-1].sum() != 0: # avoid divide by zero error
-                    rrvalues[1,0:-1] = -y[1,0:-1]*self.Q*self.rates['rrout'][1]\
-                        +y[1,-1]*self.Q*rrin[1]*fdist
-                    rrvalues[1,-1] = y[1,0:-1].sum()*self.Q*self.rates['rrout'][1] \
-                        -y[1,-1]*self.Q*rrin[1]
+                    rrvalues[1,0:-1] = -y[1,0:-1]*self.detcell['Q']*self.rates['rrout'][1]\
+                        +y[1,-1]*self.detcell['Q']*rrin[1]*fdist
+                    rrvalues[1,-1] = y[1,0:-1].sum()*self.detcell['Q']*self.rates['rrout'][1] \
+                        -y[1,-1]*self.detcell['Q']*rrin[1]
                 else:
                     rrvalues[1,:] = 0
             else:
@@ -666,15 +688,15 @@ class KineticsRun(object):
             # lambda doublet relaxation analogous to RET treatment above
             lrvalues = np.zeros_like(intermediate)
             if self.odepar['lambdaequil']:
-                lrvalues[0,0:-2] = -y[0,0:-2]*self.Q*self.rates['lrout'][0]+\
-                        y[0,-2]*self.Q*lrin[0]*fdist_lambda
-                lrvalues[0,-2] = y[0,0:-2].sum()*self.Q*self.rates['lrout'][0]- \
-                 y[0,-2]*self.Q*lrin[0]
+                lrvalues[0,0:-2] = -y[0,0:-2]*self.detcell['Q']*self.rates['lrout'][0]+\
+                        y[0,-2]*self.detcell['Q']*lrin[0]*fdist_lambda
+                lrvalues[0,-2] = y[0,0:-2].sum()*self.detcell['Q']*self.rates['lrout'][0]- \
+                 y[0,-2]*self.detcell['Q']*lrin[0]
                 if y[1,0:-2].sum() != 0: # avoid divide by zero error
-                    lrvalues[1,0:-2] = -y[1,0:-2]*self.Q*self.rates['lrout'][1]+\
-                            y[1,-2]*self.Q*lrin[1]*fdist_lambda
-                    lrvalues[1,-2] = y[1,0:-2].sum()*self.Q*self.rates['lrout'][1]-\
-                            y[1,-2]*self.Q*lrin[1]
+                    lrvalues[1,0:-2] = -y[1,0:-2]*self.detcell['Q']*self.rates['lrout'][1]+\
+                            y[1,-2]*self.detcell['Q']*lrin[1]*fdist_lambda
+                    lrvalues[1,-2] = y[1,0:-2].sum()*self.detcell['Q']*self.rates['lrout'][1]-\
+                            y[1,-2]*self.detcell['Q']*lrin[1]
                 else:
                     lrvalues[1,:] = 0
             else:
@@ -691,7 +713,7 @@ class KineticsRun(object):
 
             # c-->a processes:
             spont_emit_ca = self.rates['Aca'] * y[2]
-            quench_c = self.rates['kqc']['tot']* self.Q * y[2]
+            quench_c = self.rates['kqc']['tot']* self.detcell['Q'] * y[2]
 
             # c-->b processes:
             stim_emit_cb = self.hline['Bcb'] * Lbc_vec * y[2]
@@ -707,26 +729,26 @@ class KineticsRun(object):
 
             rrvalues = np.empty_like(intermediate)
             if self.odepar['rotequil']:
-                rrvalues[0,0:-1] = -y[0,0:-1]*self.Q*self.rates['rrout'][0] \
-                    + y[0,-1]*self.Q*rrin[0]*fdist
+                rrvalues[0,0:-1] = -y[0,0:-1]*self.detcell['Q']*self.rates['rrout'][0] \
+                    + y[0,-1]*self.detcell['Q']*rrin[0]*fdist
                 # include RET relaxation in/out rot level to distribution
                 # defined by fdist. Assume can use v"=0 fdist for b and c too.
-                rrvalues[0,-1] = y[0,0:-1].sum()*self.Q*self.rates['rrout'][0] \
-                    - y[0,-1]*self.Q*rrin[0]
+                rrvalues[0,-1] = y[0,0:-1].sum()*self.detcell['Q']*self.rates['rrout'][0] \
+                    - y[0,-1]*self.detcell['Q']*rrin[0]
                 
                 if y[1,0:-1].sum() != 0: # avoid divide by zero error
-                    rrvalues[1,0:-1] = -y[1,0:-1]*self.Q*self.rates['rrout'][1] \
-                        + y[1,-1]*self.Q*rrin[1]*fdist
-                    rrvalues[1,-1] = y[1,0:-1].sum()*self.Q*self.rates['rrout'][1] \
-                        - y[1,-1]*self.Q*rrin[1]
+                    rrvalues[1,0:-1] = -y[1,0:-1]*self.detcell['Q']*self.rates['rrout'][1] \
+                        + y[1,-1]*self.detcell['Q']*rrin[1]*fdist
+                    rrvalues[1,-1] = y[1,0:-1].sum()*self.detcell['Q']*self.rates['rrout'][1] \
+                        - y[1,-1]*self.detcell['Q']*rrin[1]
                 else:
                     rrvalues[1,:].fill(0)
 
                 if y[2,0:-1].sum() != 0: # avoid divide by zero error
-                    rrvalues[2,0:-1] = -y[2,0:-1]*self.Q*self.rates['rrout'][2] \
-                        + y[2,-1]*self.Q*rrin[2]*fdist
-                    rrvalues[2,-1] = y[2,0:-1].sum()*self.Q*self.rates['rrout'][2] \
-                        - y[2,-1]*self.Q*rrin[2]
+                    rrvalues[2,0:-1] = -y[2,0:-1]*self.detcell['Q']*self.rates['rrout'][2] \
+                        + y[2,-1]*self.detcell['Q']*rrin[2]*fdist
+                    rrvalues[2,-1] = y[2,0:-1].sum()*self.detcell['Q']*self.rates['rrout'][2] \
+                        - y[2,-1]*self.detcell['Q']*rrin[2]
                 else:
                     rrvalues[2,:].fill(0)
 
@@ -736,15 +758,15 @@ class KineticsRun(object):
             # lambda doublet relaxation analogous to RET treatment above
             lrvalues = np.zeros_like(intermediate)
             if self.odepar['lambdaequil']:
-                lrvalues[0,0:-2] = -y[0,0:-2]*self.Q*self.rates['lrout'][0]+\
-                        y[0,-2]*self.Q*lrin[0]*fdist_lambda
-                lrvalues[0,-2] = y[0,0:-2].sum()*self.Q*self.rates['lrout'][0] -\
-                        y[0,-2]*self.Q*lrin[0]
+                lrvalues[0,0:-2] = -y[0,0:-2]*self.detcell['Q']*self.rates['lrout'][0]+\
+                        y[0,-2]*self.detcell['Q']*lrin[0]*fdist_lambda
+                lrvalues[0,-2] = y[0,0:-2].sum()*self.detcell['Q']*self.rates['lrout'][0] -\
+                        y[0,-2]*self.detcell['Q']*lrin[0]
                 if y[1,0:-2].sum() != 0: # avoid divide by zero error
-                    lrvalues[1,0:-2] = -y[1,0:-2]*self.Q*self.rates['lrout'][1]+\
-                            y[1,-2]*self.Q*lrin[1]*fdist_lambda
-                    lrvalues[1,-2] = y[1,0:-2].sum()*self.Q*self.rates['lrout'][1]-\
-                            y[1,-2]*self.Q*lrin[1]
+                    lrvalues[1,0:-2] = -y[1,0:-2]*self.detcell['Q']*self.rates['lrout'][1]+\
+                            y[1,-2]*self.detcell['Q']*lrin[1]*fdist_lambda
+                    lrvalues[1,-2] = y[1,0:-2].sum()*self.detcell['Q']*self.rates['lrout'][1]-\
+                            y[1,-2]*self.detcell['Q']*lrin[1]
                 else:
                     lrvalues[1,:].fill(0)
                 lrvalues[2,:].fill(0) # no lambda doublets in SIGMA state
@@ -884,7 +906,7 @@ class KineticsRun(object):
             self.abcpop = np.empty((np.size(self.tbins),self.nlevels,2))
             self.abcpop[:,:,0]=self.N[:,:,0:-2].sum(2)
             self.abcpop[:,:,1]=self.N[:,:,-2:].sum(2)
-        timeseries = k.tbins[:, np.newaxis] # bulk out so ndim = 2
+        timeseries = self.tbins[:, np.newaxis] # bulk out so ndim = 2
         abcpop_slice = self.abcpop[:,:,0] # slice along states of interest
         np.savetxt(csvout,np.hstack((timeseries,abcpop_slice)),
                 delimiter = ",", fmt="%.6e")
@@ -929,51 +951,52 @@ class KineticsRun(object):
             self.abfeat.pop=data['pop']
 
 ##############################################################################
-# Simple batch scripts
+# Simple batch scripts, now deprecated because KineticsRun no longer assumes
+# a bunch of default parameters
 
-def pressdepen(file):
-    '''Run solveode over range of pressures.
+# def pressdepen(file):
+#     '''Run solveode over range of pressures.
 
-    Default solveode run, all output just printed with logger.info.
+#     Default solveode run, all output just printed with logger.info.
 
-    Parameters
-    ----------
-    file : str
-    Path to HITRAN file containing data.
-    '''
-    i=1
-    pressconsidered=(2,10,100,760)
-    for press in pressconsidered:
-        logger.info('--------------------')
-        logger.info('KineticsRun {:} OF {}'.format(i,
-            np.size(pressconsidered)))
-        logger.info('--------------------')
-        k=KineticsRun(press=press,stype='sin')
-        k.solveode(file)
-        # k.plotpops()
-        #k.abfeat=Abs()
-        #k.abfeat.makeProfile(press=press)
-        #k.sweep.matchAbsSize(k.abfeat)
-        i+=1
+#     Parameters
+#     ----------
+#     file : str
+#     Path to HITRAN file containing data.
+#     '''
+#     i=1
+#     pressconsidered=(2,10,100,760)
+#     for press in pressconsidered:
+#         logger.info('--------------------')
+#         logger.info('KineticsRun {:} OF {}'.format(i,
+#             np.size(pressconsidered)))
+#         logger.info('--------------------')
+#         k=KineticsRun(press=press,stype='sin')
+#         k.solveode(file)
+#         # k.plotpops()
+#         #k.abfeat=Abs()
+#         #k.abfeat.makeProfile(press=press)
+#         #k.sweep.matchAbsSize(k.abfeat)
+#         i+=1
 
-def sweepdepen(file):
-    '''Run solveode over range of sweep widths.
+# def sweepdepen(file):
+#     '''Run solveode over range of sweep widths.
 
-    Default solveode run, all output just printed with logger.info.
+#     Default solveode run, all output just printed with logger.info.
 
-    Parameters
-    ----------
-    file : str
-    Path to HITRAN file containing data.
-    '''
-    for factor in (0.01, 0.1, 0.5, 0.9):
-        k=KineticsRun(stype='sin')
-        k.sweep.factor=factor
-        # k.abfeat=Abs()
-        # k.abfeat.makeProfile()
-        # k.sweep.matchAbsSize(k.abfeat)
-        k.solveode(file)
-        # k.plotpops()
+#     Parameters
+#     ----------
+#     file : str
+#     Path to HITRAN file containing data.
+#     '''
+#     for factor in (0.01, 0.1, 0.5, 0.9):
+#         k=KineticsRun(stype='sin')
+#         k.sweep.factor=factor
+#         # k.abfeat=Abs()
+#         # k.abfeat.makeProfile()
+#         # k.sweep.matchAbsSize(k.abfeat)
+#         k.solveode(file)
+#         # k.plotpops()
 
 ##############################################################################
 # command line use: HITFILE PARAMETERS [-l] LOGFILE [-o] OUTPUT -i IMAGE
@@ -987,45 +1010,13 @@ if __name__ == "__main__":
     # HITFILE PARAMETERS [-l] LOGFILE [-o] OUTPUT -i IMAGE
     parser.add_argument("hitfile", help="Hitran file")
     parser.add_argument("parameters", help="YAML parameter file")
-
-    # loop through argdict for optional parameters
-    argdict = {"logfile":"log file","output":"3-state output csv",
+    # optional parameters
+    argdict = {"logfile":"log file","csvout":"output csv",
     "image":"output png image"}
     for arg,descr in argdict.iteritems():
         shortflag = "-" + arg[0]
         longflag = "--" + arg
         parser.add_argument(shortflag, longflag, help=descr)
-
     args = parser.parse_args()
 
-    # set up FileHandler for logging to file if requested
-    if args.logfile:
-        fh = logging.FileHandler(args.logfile)
-        fh.setLevel(logging.INFO)
-        logfile_formatter = logging.Formatter('%(asctime)s:%(levelname)s:'+
-            '%(name)s:%(message)s')
-        fh.setFormatter(logfile_formatter)
-        logger.addHandler(fh)
-
-    # write to log each output toggled on
-    for arg, descr in argdict.iteritems():
-        if getattr(args, arg):
-            logger.info('saving '+descr+' to '+getattr(args,arg))
-
-    # use parameter yaml file to set parameters 
-    with open(args.parameters, 'r') as f:
-        par = yaml.load(f,Loader=Loader) 
-
-    # initialize KineticsRun instance and run
-    k = KineticsRun(
-            irlaser=par['ir-laser'],
-            sweep=par['sweep'],
-            uvlaser=par['uv-laser'],
-            odepar=par['solve-ode'],
-            detcell=par['det-cell'],
-            irline=par['ir-line'],
-            rates=par['rates'])
-    k.runmodel(args.hitfile,args.logfile,args.output,args.image)
-
-    if args.output:
-        k.savecsv(args.output)
+    main(args.hitfile,args.parameters,args.logfile,args.csvout,args.image)
