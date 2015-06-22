@@ -46,7 +46,7 @@ import pdb
 # need to initialize here AND in each class/submodule
 logger = logging.getLogger('popmodel')
 logger.setLevel(logging.INFO)
-# console handler always runs (optional logfile set up in __main__ code)
+# console handler always runs (optional logfile through init_logfile())
 ch = logging.StreamHandler()
 ch.setLevel(logging.INFO)
 formatter = logging.Formatter('%(levelname)s:%(name)s:%(message)s')
@@ -59,7 +59,7 @@ def importyaml(parfile):
     '''Extract nested dict of parameters from yaml file.
 
     See sample parameters.yaml file for full structure. Top-level keys are
-    ir-laser, sweep, uv-laser, solve-ode, ir-line, uv-line, det-cell and rates
+    irlaser,sweep,uvlaser,odepar,irline,uvline,detcell,rates
     '''
     with open(parfile, 'r') as f:
         par = yaml.load(f,Loader=Loader) 
@@ -76,7 +76,7 @@ def init_logfile(logfile):
     logger.addHandler(fh)
 
 def main(hitfile,parameters,logfile=None,csvout=None,image=None):
-    '''wrapper to go from command-line inputs to output
+    '''command-line-mode-style inputs to integration output
     '''
     if logfile:
         init_logfile(logfile)
@@ -208,7 +208,6 @@ class Sweep(object):
             logger.info('alignBins: sweep width ',
                 '{:.2g} MHz, sweep time {:.2g} s'.format(self.width/1e6,
                     self.tsweep))
-        
         # report how much of the b<--a feature is being swept over:
         self.part_swept=np.sum(abfeat.intpop)
         logger.info('alignBins: region swept by IR beam represents '+
@@ -337,6 +336,10 @@ class KineticsRun(object):
             # when sweep is sinusoidal.
         else:
             self.dosweep=False
+            # stupid hack to be able to use self.sweep.las_bins.size elsewhere
+            # and have it be 1.
+            self.sweep = lambda: None
+            self.sweep.las_bins = np.zeros(1)
         
         # extract invariant kinetics parameters
         self.rates = rates
@@ -427,8 +430,7 @@ class KineticsRun(object):
             t_steps = np.size(self.tbins)
 
             # define local variables for convenience
-            num_las_bins=np.size(self.sweep.las_bins)
-            num_int_bins=num_las_bins+3 # +3 = outside laser sweep, other
+            num_las_bins=self.sweep.las_bins.size
             # lambda doublet, other rot
             tsweep = self.sweep.tsweep
             stype = self.sweep.stype
@@ -447,10 +449,7 @@ class KineticsRun(object):
                 self.sweepfunc= np.empty(np.size(tindex))
                 self.sweepfunc.fill(np.floor(num_las_bins/2))
 
-        else: # single 'bin' excited by laser
-            num_las_bins=1
-            num_int_bins=num_las_bins+3 # +3 = outside laser sweep, other
-            # lambda doublet, other rot
+        else: # single 'bin' excited by laser. Set up in __init__
             dt = self.odepar['dt'] # s
             self.tbins = np.arange(0, tl+dt, dt)
             t_steps = np.size(self.tbins)
@@ -461,14 +460,13 @@ class KineticsRun(object):
             'step size {:.2g} s'.format(dt))
 
         # set up ODE
-
         if self.odepar['withoutUV']:
             self.nlevels=2
         else:
             self.nlevels=3    
 
         # Create initial state N0, all pop distributed in ground state
-        self.N0 = np.zeros((self.nlevels,num_int_bins))
+        self.N0 = np.zeros((self.nlevels,self.sweep.las_bins.size+3))
         if self.dosweep:
             self.N0[0,0:-3] = self.abfeat.intpop * self.rotfrac[0] \
             * self.detcell['ohtot'] / 2
@@ -484,7 +482,7 @@ class KineticsRun(object):
         # N stores a/b/c state pops in each bin over time.
         # abcpop stores a/b/c pops, tracks in or out rot/lambda of interest.
         if self.odepar['keepN']:
-            self.N=np.empty((t_steps,self.nlevels,num_int_bins))
+            self.N=np.empty((t_steps,self.nlevels,self.sweep.las_bins.size+3))
             self.N[0] = self.N0
         else:
             self.abcpop=np.empty((t_steps,self.nlevels,2))
@@ -495,11 +493,7 @@ class KineticsRun(object):
         r = ode(self.dN)
         # r.set_integrator('vode',nsteps=500,method='bdf')
         r.set_integrator('lsoda', with_jacobian=False,)
-        if self.odepar['lumpsolve']:
-            self.N0lump=self.makeNlump(self.N0)
-            r.set_initial_value(list(self.N0lump.ravel()), 0)
-        else:
-            r.set_initial_value(list(self.N0.ravel()), 0)
+        r.set_initial_value(list(self.N0.ravel()), 0)
 
         logger.info('  %  |   time   |   bin   ')
         logger.info('--------------------------')
@@ -518,7 +512,7 @@ class KineticsRun(object):
             # integrate
             entry=int(round(r.t/dt))+1
             nextstep = r.integrate(r.t + dt)
-            nextstepN = np.resize(nextstep, (self.nlevels,num_int_bins))
+            nextstepN = np.resize(nextstep, (self.nlevels,self.sweep.las_bins.size + 3))
 
             # save output
             if self.odepar['keepN'] == True:
@@ -530,29 +524,6 @@ class KineticsRun(object):
             self.time_progress+=1
 
         logger.info('solveode: done with integration')
-
-    def makeNlump(self,N):
-        '''Try to make solveode more efficient by lumping together all N that
-        the laser sweeps over, apart from the current bin. Developmental.
-
-        Parameters
-        ----------
-        N : ndarray
-        2D array as constructed in solveode that stores population across the
-        absorption profile and in each energy level, at a single timestep.
-
-        Outputs
-        -------
-        out : ndarray
-        2D array that lumps together all population that the laser sweeps over,
-        apart from the current laser bin, in the ground state.
-        '''
-        out=np.zeros((self.nlevels,4))
-        out[0,0]=N[0,self.laspos()]
-        out[0,1]=np.sum(N[0,:])-out[0,0]
-        out[0,-2:]=N[0,-2:] # same values outside laser sweep, other rot
-        # need to do anything with upper states? as written, they're all 0
-        return out
 
     def laspos(self):
         '''Determine position of IR laser at current integration time.
@@ -568,9 +539,7 @@ class KineticsRun(object):
         is currently tuned to.
         '''
         voigt_pos = self.sweepfunc[self.time_progress]
-        num_las_bins=np.size(self.sweep.las_bins)
-        num_int_bins=num_las_bins+3
-        if voigt_pos+1 > num_las_bins:
+        if voigt_pos+1 > self.sweep.las_bins.size:
             logger.warning('laspos: voigt_pos out of range')
         return voigt_pos
 
@@ -583,72 +552,31 @@ class KineticsRun(object):
         Time
         y: ndarray
         1D-array describing the population in each bin in each energy level.
-        ODE solver requires this to be a 1D-array, so pass in list(arr.ravel())
-        where `arr` is the multidimensional array. Within dN, this
-        multidimensional array is reconstructed and then flattened again at the
-        end.
+        Flattened version of multidimensional array `N`.
 
         Outputs
         -------
         result : ndarray
         1D-array describing dN in all 'a' states, then 'b', ...
         '''
-        # calculate laser intensities in appropriate units
-        def intensity(laser):
-            '''Calculate spec intensity of laser at given time.
+        # ode method requires y passed in and out of dN to be one-dimensional.
+        # For calculations within dN, reshape y back into 2D form of N
+        y=y.reshape(self.nlevels,-1)
 
-            Assumes total integration time less than rep rate.
-            '''
-            if not(laser['pulse']) or (t>laser['delay'] and
-                    t<laser['pulse']+laser['delay']):
-                area = np.pi*(laser['diam']*0.5)**2
-                L = oh.spec_intensity(laser['power'],area,laser['bandwidth'])
-            else:
-                L = 0
-            return L
-
-        Lab = intensity(self.irlaser)
-        Lbc = intensity(self.uvlaser)
+        # laser intensities accounting for pulsing
+        Lab = intensity(t, self.irlaser)
+        Lbc = intensity(t, self.uvlaser)
 
         # Represent position of IR laser with Lab_sweep
-        # smaller integration matrix with lumpsolve (under development):
-        if self.odepar['lumpsolve']:
-            Lab_sweep=np.array([Lab,0])
-
-        elif self.dosweep:
+        if self.dosweep:
             voigt_pos=self.laspos()
-            # TODO stop doing this stupid defining num_int_bins locally
-            # everywhere
-            num_int_bins=np.size(self.sweep.las_bins)+3
-            Lab_sweep=np.zeros(num_int_bins)
-            Lab_sweep[voigt_pos]=Lab
+        else: # laser always at single bin representing entire line
+            voigt_pos = 0
+        Lab_sweep=np.zeros(self.sweep.las_bins.size + 3)
+        Lab_sweep[voigt_pos]=Lab
 
-        else: # no sweep, laser always at single bin of entire line
-            num_int_bins = 1 + 3
-            Lab_sweep = np.array([Lab, 0, 0, 0])
-
-        # reshape y back into form where each nested 1D array contains all
-        # populations in given energy level:
-        y=y.reshape(self.nlevels,-1)
-        
-        # Calculate coefficients for...
-        # ...b<--a:
-        absorb_ab = self.hline['Bab'] * Lab_sweep * y[0]
-
-        # ...b-->a: (spont emission negligible)
-        stim_emit_ba = self.hline['Bba'] * Lab_sweep * y[1]
-        quench_b = self.rates['kqb']['tot']* self.detcell['Q'] * y[1]
-
-        # ...rotational relaxation:
-        rrin = self.rates['rrout'] * self.rotfrac/(1-self.rotfrac)
-
-        # ...lambda doublet relaxation:
-        lrin = self.rates['lrout'] # assume equal energies, equal equilibrium pops
-
-        # calculate fdist, distribution within rotational state (including
-        # lambda doublet) that RET (and lambda relaxation) relaxes to
-        # fdist_lambda is distribution within ONLY half of rotational state, to
-        # use for relaxation from other lambda doublet.
+        # calculate fdist and fdist_lambda, rotational and lambda distributions
+        # that RET and lambda relaxation relax to.
         if self.odepar['redistequil']:
             # equilibrium distribution in ground state, as calced for N0
             fdist = (self.N0[0,0:-1]/self.N0[0,0:-1].sum())
@@ -659,126 +587,49 @@ class KineticsRun(object):
             fdist_lambda = fdist[:-1]/fdist[:-1].sum()
         else:
             fdist = 0
-
-        # if UV laser calcs are off, only have a and b states:
-        if self.odepar['withoutUV']:
-            dN0 = - absorb_ab + stim_emit_ba + quench_b
-            dN1 = absorb_ab - stim_emit_ba - quench_b
-            intermediate = np.array([dN0, dN1])
-
-            rrvalues = np.empty_like(intermediate)
-            if self.odepar['rotequil']:
-                # include RET relaxation in/out rot level to distribution
-                # defined by fdist. Assume can use v"=0 fdist for 'b' too.
-                rrvalues[0,0:-1] = -y[0,0:-1]*self.detcell['Q']*self.rates['rrout'][0] \
-                +y[0,-1]*self.detcell['Q']*rrin[0]*fdist
-                rrvalues[0,-1] = y[0,0:-1].sum()*self.detcell['Q']*rates['rrout'][0] \
-                -y[0,-1]*self.detcell['Q']*rrin[0]
-                
-                if y[1,0:-1].sum() != 0: # avoid divide by zero error
-                    rrvalues[1,0:-1] = -y[1,0:-1]*self.detcell['Q']*self.rates['rrout'][1]\
-                        +y[1,-1]*self.detcell['Q']*rrin[1]*fdist
-                    rrvalues[1,-1] = y[1,0:-1].sum()*self.detcell['Q']*self.rates['rrout'][1] \
-                        -y[1,-1]*self.detcell['Q']*rrin[1]
-                else:
-                    rrvalues[1,:] = 0
-            else:
-                rrvalues.fill(0)
-            
-            # lambda doublet relaxation analogous to RET treatment above
-            lrvalues = np.zeros_like(intermediate)
-            if self.odepar['lambdaequil']:
-                lrvalues[0,0:-2] = -y[0,0:-2]*self.detcell['Q']*self.rates['lrout'][0]+\
-                        y[0,-2]*self.detcell['Q']*lrin[0]*fdist_lambda
-                lrvalues[0,-2] = y[0,0:-2].sum()*self.detcell['Q']*self.rates['lrout'][0]- \
-                 y[0,-2]*self.detcell['Q']*lrin[0]
-                if y[1,0:-2].sum() != 0: # avoid divide by zero error
-                    lrvalues[1,0:-2] = -y[1,0:-2]*self.detcell['Q']*self.rates['lrout'][1]+\
-                            y[1,-2]*self.detcell['Q']*lrin[1]*fdist_lambda
-                    lrvalues[1,-2] = y[1,0:-2].sum()*self.detcell['Q']*self.rates['lrout'][1]-\
-                            y[1,-2]*self.detcell['Q']*lrin[1]
-                else:
-                    lrvalues[1,:] = 0
-            else:
-                lrvalues.fill(0)
-            
-        # if UV laser calcs are on, a little more to do:
-        else:
+        
+        # generate rates for each process
+        # rates between a/b/c states
+        absorb_ab = abcrate(y, self.hline['Bab']*Lab_sweep,0,1)
+        stim_emit_ba = abcrate(y, self.hline['Bba']*Lab_sweep,1,0)
+        quench_b = abcrate(y, self.rates['kqb']['tot']*self.detcell['Q'],1,0)
+        # logger.info(absorb_ab)
+        intermediate = absorb_ab+stim_emit_ba+quench_b
+        if not(self.odepar['withoutUV']):
             # Lbc only excites population in particular rot/lambda level
             Lbc_vec = np.zeros_like(y[0])
             Lbc_vec[0:-2].fill(Lbc)
+            absorb_bc = abcrate(y, self.hline['Bbc']*Lbc_vec,1,2)
+            spont_emit_ca = abcrate(y, self.rates['Aca'],2,0)
+            quench_c=abcrate(y, self.rates['kqc']['tot']*self.detcell['Q'],2,0)
+            stim_emit_cb = abcrate(y, self.hline['Bcb']*Lbc_vec,2,1)
+            spont_emit_cb = abcrate(y, self.rates['Acb'],2,1)
+            intermediate = (intermediate + absorb_bc + spont_emit_ca + quench_c
+                + stim_emit_cb + spont_emit_cb)
 
-            # c<--b processes:
-            absorb_bc = self.hline['Bbc'] * Lbc_vec * y[1]
+        # rotational equilibration
+        rrin = self.rates['rrout'] * self.rotfrac/(1-self.rotfrac)
+        rrates = np.array([self.rates['rrout'],rrin]).T
+        if self.odepar['rotequil']:
+            rrvalues = np.vstack([internalrate(l, r, fdist, 'rot') for r,l
+                in zip(rrates, y)])
+        else:
+            rrvalues = np.zeros_like(y)
 
-            # c-->a processes:
-            spont_emit_ca = self.rates['Aca'] * y[2]
-            quench_c = self.rates['kqc']['tot']* self.detcell['Q'] * y[2]
+        # lambda equilibration
+        lrin = self.rates['lrout'] # assume equal equilibrium pops
+        lrates = np.array([self.rates['lrout'],lrin]).T
+        if self.odepar['lambdaequil']:
+            lrvalues = np.vstack([internalrate(l, r, fdist_lambda, 'lambda')
+                for r,l in zip(lrates, y)])
+        else:
+            lrvalues = np.zeros_like(y)
 
-            # c-->b processes:
-            stim_emit_cb = self.hline['Bcb'] * Lbc_vec * y[2]
-            spont_emit_cb = self.rates['Acb'] * y[2]
+        result = intermediate + rrvalues + lrvalues
+        # flatten to 1D array as required
+        return result.ravel()
 
-            dN0 = - absorb_ab + stim_emit_ba + spont_emit_ca + quench_b \
-                + quench_c
-            dN1 = absorb_ab - stim_emit_ba + stim_emit_cb - absorb_bc \
-                - quench_b + spont_emit_cb
-            dN2 = - spont_emit_cb + absorb_bc - spont_emit_ca - quench_c \
-                - stim_emit_cb
-            intermediate = np.array([dN0, dN1, dN2])
 
-            rrvalues = np.empty_like(intermediate)
-            if self.odepar['rotequil']:
-                rrvalues[0,0:-1] = -y[0,0:-1]*self.detcell['Q']*self.rates['rrout'][0] \
-                    + y[0,-1]*self.detcell['Q']*rrin[0]*fdist
-                # include RET relaxation in/out rot level to distribution
-                # defined by fdist. Assume can use v"=0 fdist for b and c too.
-                rrvalues[0,-1] = y[0,0:-1].sum()*self.detcell['Q']*self.rates['rrout'][0] \
-                    - y[0,-1]*self.detcell['Q']*rrin[0]
-                
-                if y[1,0:-1].sum() != 0: # avoid divide by zero error
-                    rrvalues[1,0:-1] = -y[1,0:-1]*self.detcell['Q']*self.rates['rrout'][1] \
-                        + y[1,-1]*self.detcell['Q']*rrin[1]*fdist
-                    rrvalues[1,-1] = y[1,0:-1].sum()*self.detcell['Q']*self.rates['rrout'][1] \
-                        - y[1,-1]*self.detcell['Q']*rrin[1]
-                else:
-                    rrvalues[1,:].fill(0)
-
-                if y[2,0:-1].sum() != 0: # avoid divide by zero error
-                    rrvalues[2,0:-1] = -y[2,0:-1]*self.detcell['Q']*self.rates['rrout'][2] \
-                        + y[2,-1]*self.detcell['Q']*rrin[2]*fdist
-                    rrvalues[2,-1] = y[2,0:-1].sum()*self.detcell['Q']*self.rates['rrout'][2] \
-                        - y[2,-1]*self.detcell['Q']*rrin[2]
-                else:
-                    rrvalues[2,:].fill(0)
-
-            else:
-                rrvalues.fill(0)
-
-            # lambda doublet relaxation analogous to RET treatment above
-            lrvalues = np.zeros_like(intermediate)
-            if self.odepar['lambdaequil']:
-                lrvalues[0,0:-2] = -y[0,0:-2]*self.detcell['Q']*self.rates['lrout'][0]+\
-                        y[0,-2]*self.detcell['Q']*lrin[0]*fdist_lambda
-                lrvalues[0,-2] = y[0,0:-2].sum()*self.detcell['Q']*self.rates['lrout'][0] -\
-                        y[0,-2]*self.detcell['Q']*lrin[0]
-                if y[1,0:-2].sum() != 0: # avoid divide by zero error
-                    lrvalues[1,0:-2] = -y[1,0:-2]*self.detcell['Q']*self.rates['lrout'][1]+\
-                            y[1,-2]*self.detcell['Q']*lrin[1]*fdist_lambda
-                    lrvalues[1,-2] = y[1,0:-2].sum()*self.detcell['Q']*self.rates['lrout'][1]-\
-                            y[1,-2]*self.detcell['Q']*lrin[1]
-                else:
-                    lrvalues[1,:].fill(0)
-                lrvalues[2,:].fill(0) # no lambda doublets in SIGMA state
-            else:
-                lrvalues.fill(0)
-        # if t>0.00004:
-        #     pdb.set_trace()
-        result = (intermediate + rrvalues + lrvalues).ravel()
-        # flatten to 1D array: 1st all 'a' states entries, then 'b', ...:
-        return result
-
-        
     def plotpops(self, title='excited state population', yl='b state pop',
             pngout = None):
         '''For solved KineticsRun, plot excited state population over time.
@@ -950,6 +801,82 @@ class KineticsRun(object):
             self.abfeat.abs_freq=data['abs_freq']
             self.abfeat.pop=data['pop']
 
+def intensity(t, laser):
+    '''Calculate spec intensity of laser at given time.
+
+    Assumes total integration time less than rep rate.
+    '''
+    if not(laser['pulse']) or (t>laser['delay'] and
+            t<laser['pulse']+laser['delay']):
+        area = np.pi*(laser['diam']*0.5)**2
+        L = oh.spec_intensity(laser['power'],area,laser['bandwidth'])
+    else:
+        L = 0
+    return L
+
+def abcrate(y, rateconst, start, final):
+    '''calculate contribution to overall rate array for process that
+    goes between a/b/c states.
+
+    Parameters
+    ----------
+    y : array
+    Array of populations.
+    rateconst : float or array
+    First-order rate constant for process, s^-1
+    start : int (0, 1 or 2)
+    Starting level for rate process (a/b/c)
+    final: int (0, 1 or 2)
+    Final level for rate process (a/b/c)
+
+    Output
+    ------
+    term : np.ndarray
+    2D array shaped like y containing rates for process
+    '''
+    term = np.zeros_like(y)
+    rate = rateconst * y[start]
+    term[start] = -rate
+    term[final] = rate
+    return term
+    
+def internalrate(yl, ratecon, equildist, ratetype):
+    '''calculate contribution to overall rate array for process
+    internal to single a/b/c level with equilibrium distribution.
+
+    Parameters
+    ----------
+    yl : array
+    1D array of population in single a/b/c level
+    ratecon : list
+    First-order rate constants for forward and reverse process, s^-1
+    equildist : float
+    Equilibrium distribution of process
+    ratetype : str ('rot' or 'lambda')
+    Type of process: rotational or lambda relaxation.
+
+    Output
+    ------
+    term : np.ndarray
+    2D array shaped like y containing rates for process
+    '''
+    term = np.empty_like(yl)
+    if ratetype == 'rot':
+        rngin = np.s_[0:-1]
+        rngout = np.s_[-1]
+    elif ratetype == 'lambda':
+        rngin = np.s_[0:-2]
+        rngout = np.s_[-1]
+    else:
+        ValueError('ratetype needs to be \'rot\' or \'lambda\'')
+
+    if yl[rngin].sum() != 0:
+        term[rngin] = -yl[rngin]*ratecon[0] + yl[rngout]*ratecon[1]*equildist
+        term[rngout] = yl[rngin].sum()*ratecon[0] - yl[rngout]*ratecon[1]
+    else:
+        term.fill(0)
+    return term
+
 ##############################################################################
 # Simple batch scripts, now deprecated because KineticsRun no longer assumes
 # a bunch of default parameters
@@ -1001,13 +928,8 @@ class KineticsRun(object):
 ##############################################################################
 # command line use: HITFILE PARAMETERS [-l] LOGFILE [-o] OUTPUT -i IMAGE
 if __name__ == "__main__":
-    '''Run from command line, given hitran par file and parameters yaml file.
-    '''
-
     parser = argparse.ArgumentParser(description=("integrate two- or "+
     "three-level LIF system for given HITRAN file and set of parameters"))
-
-    # HITFILE PARAMETERS [-l] LOGFILE [-o] OUTPUT -i IMAGE
     parser.add_argument("hitfile", help="Hitran file")
     parser.add_argument("parameters", help="YAML parameter file")
     # optional parameters

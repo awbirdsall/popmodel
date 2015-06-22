@@ -10,7 +10,7 @@ irlaser:
 # sweeping of narrow-bandwidth IR laser (optional)
 # if dosweep: False, calcs assume ir laser bandwidth perfectly matches abs line
 sweep:
-    dosweep: False
+    dosweep: True
     tsweep: 1.e-4 # s
     keepTsweep: False
     stype: 'sin' # 'sin','saw' or null (sit at center)
@@ -37,14 +37,13 @@ odepar:
     lambdaequil: True # include lambda doublet equilibration
     redistequil: True # RET and lambda relaxation converges to (hard-coded)
         # thermal distribution rather than instantaneous
-    lumpsolve: False # developmental idea, not implemented
 
-irline: 'P_1(2)ff' # follow label system in loadHITRAN
+irline: 'P_1(3)ff' # follow label system in loadHITRAN
 
 uvline: null # not implemented
 
 detcell: # detection cell
-    press: 2.5 # torr
+    press: 3 # torr
     temp: 298. # K
     xoh: 0.5e-12 # 0.5 pptv, ballpark (1.2E7 cm^-3 at 760 torr, 296 K)
     xh2o: 0.02 # important quenching species. Affects electronic and
@@ -74,3 +73,4 @@ rates:
     lrout: # lambda relaxation out of single lambda doublet level (a/b)
         - 4.5e-10 # ballpark value used in Kliner and Farrow 1999 based on lit
         - 4.5e-10 # above
+        - 0.0 # no lambda doublets in SIGMA state
