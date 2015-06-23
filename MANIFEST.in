@@ -1,0 +1,2 @@
+include README.md
+include src/popmodel/data/parameters_template.yaml

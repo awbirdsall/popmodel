@@ -32,14 +32,12 @@ from scipy.constants import c, N_A, pi
 from scipy.integrate import ode
 from math import floor
 import logging
-import ConfigParser
 import argparse
 import yaml
 try:
     from yaml import CLoader as Loader
 except ImportError:
     from yaml import Loader # a lot slower sez https://stackoverflow.com/questions/18404441/why-is-pyyaml-spending-so-much-time-in-just-parsing-a-yaml-file
-import pdb
 
 ##############################################################################
 # set up logging, follow python logging cookbook
@@ -927,18 +925,18 @@ def internalrate(yl, ratecon, equildist, ratetype):
 
 ##############################################################################
 # command line use: HITFILE PARAMETERS [-l] LOGFILE [-o] OUTPUT -i IMAGE
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=("integrate two- or "+
-    "three-level LIF system for given HITRAN file and set of parameters"))
-    parser.add_argument("hitfile", help="Hitran file")
-    parser.add_argument("parameters", help="YAML parameter file")
-    # optional parameters
-    argdict = {"logfile":"log file","csvout":"output csv",
-    "image":"output png image"}
-    for arg,descr in argdict.iteritems():
-        shortflag = "-" + arg[0]
-        longflag = "--" + arg
-        parser.add_argument(shortflag, longflag, help=descr)
-    args = parser.parse_args()
+# if __name__ == "__main__":
+#     parser = argparse.ArgumentParser(description=("integrate two- or "+
+#     "three-level LIF system for given HITRAN file and set of parameters"))
+#     parser.add_argument("hitfile", help="Hitran file")
+#     parser.add_argument("parameters", help="YAML parameter file")
+#     # optional parameters
+#     argdict = {"logfile":"log file","csvout":"output csv",
+#     "image":"output png image"}
+#     for arg,descr in argdict.iteritems():
+#         shortflag = "-" + arg[0]
+#         longflag = "--" + arg
+#         parser.add_argument(shortflag, longflag, help=descr)
+#     args = parser.parse_args()
 
-    main(args.hitfile,args.parameters,args.logfile,args.csvout,args.image)
+#     main(args.hitfile,args.parameters,args.logfile,args.csvout,args.image)
