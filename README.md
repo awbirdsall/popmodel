@@ -39,6 +39,7 @@ Basic usage:
 
 ~~~
 import popmodel as pm
+pm.stream_logging_info() # optional, print logging.INFO to screen
 par = pm.importyaml("path_to/yaml/parameters.yaml")
 hpar = pm.loadHITRAN.processHITRAN("path_to/13_hit12.par")
 k = pm.KineticsRun(hpar,**par)
