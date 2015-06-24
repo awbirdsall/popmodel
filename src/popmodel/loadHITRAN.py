@@ -14,6 +14,8 @@ import ohcalcs as oh
 import logging
 from fractions import Fraction
 
+loadhitran_logger = logging.getLogger('popmodel.loadhitran')
+
 def importhitran(file, columns=None):
     '''
     Extract complete set of data from HITRAN-type par file.
@@ -156,7 +158,10 @@ def extractNJlabel(x):
     --------
     Na, Nb, Nc, Ja, Jb, Jc, label : ndarrays (7)
     N and J quantum numbers for 'a', 'b', and 'c' states, and strings
-    identifying the b <-- a transitions.
+    identifying the b <-- a transitions. Format of label is 'X_#(*)ll' where
+    X denotes branch (P, Q, R, ...), # describes J cases of upper and lower
+    states (1, 2, 12, 21), * is lower state N, and ll describes which half of
+    lambda doublet is upper/lower state (ef, fe, ee, ff).
     '''
     # TODO: refactor so direct HITRAN extraction is separate from calculations
     # involving third state for TP LIF.
@@ -374,5 +379,5 @@ def processHITRAN(file, Scutoff=1e-20, vabmin=3250, vabmax=3800):
                 ]
 
     alldata = np.rec.fromarrays(arraylist,dtype=dtypelist)
-    logging.info('processHITRAN: file processed')
+    loadhitran_logger.info('processHITRAN: file processed')
     return alldata

@@ -1,5 +1,5 @@
-## Python module for OH double resonance calculations
-## Updated June 2014
+## Helper module in popmodel containing constants and functions for
+## OH calculations.
 ## Adam Birdsall
 
 ## Literature cited:
@@ -29,22 +29,28 @@ def kqavg(kn2,ko2,kh2o,xh2o=0.02):
 
 #######################
 
-## Literature values for OH
+### Literature values for OH
 mass = 17.01/(N_A)*1000    # kg
 
-nu12 = 3407.53 * atm.wavenum_to_Hz  # Hz, IR transition used in Tsuji et al, 2000
+nu12 = 3407.53 * atm.wavenum_to_Hz  # Hz, IR transition used in Tsuji et al,
+# 2000. Illustrative example; popmodel extracts precise wavenumber for given IR
+#       transition from HITRAN.
 
-# Degeneracies
+## Degeneracies
 # Generally, degeneracies for rotational quantum number J are 2J+1. The ground
-# electronic state is PI, so lambda doubling doubles the degeneracies (unless
-# it breaks them?). A-state is SIGMA, so there is no lambda doubling.
-ga = 20    # (J = 4.5)
+# electronic state is PI, so lambda doubling doubles the degeneracies. A-state
+# is SIGMA, so there is no lambda doubling.
 
+# Example values for 3-level system where IR transition is P branch and UV is
+# Q branch:
+ga = 20    # (J = 4.5)
 gb = 16    # (J = 3.5)
 gc = 8    # From (2*J + 1) and N = 3 (?) for Tsuji et al. feature. Assuming
             # Q branch.
 
-# Einstein coefficients
+## Einstein coefficients
+# Aba is very slow and unimportant for popmodel calculations. Acb and Aca are
+# used by popmodel as values independent of line selected.
 Aba = 16.9      # Einstein coefficient for spontaneous emission, s^-1;
                 # using van de Meerakker et al, 2005
                 # alt value: 14.176 s^-1 from Tsuji et al, 2000
@@ -55,15 +61,70 @@ Acb = 5300 #for A2Sigma+(v'=0)-->X2Pi(v"=1) Copeland (1987). Really, we'd
 Aca = 1.45e6 #s-1, for A2Sigma+(v'=0)-->X2Pi(v"=0), German (1975)
 # No c<--a laser, so B coefficients not applicable.
 
-# rotational relaxation
-# assume for now dealing with N"=1.
-rotfrac_a = 0.199104 # taken from LIFBASE, 296 K thermal distribution, both halves of lambda doublet
-rotfrac_b = 0.192688 # this row and previous: N(F1e+f) for J=1.5
-rotfrac_c = 0.130170 # v'=1, N(F1) for J=1.5 + N(F2) for J=0.5
-rotfrac = np.array([rotfrac_a,rotfrac_b,rotfrac_c])
+## Rotational relaxation
+# Define in terms of depopulation rate of rotational level of interest. Model
+# also needs to include repopulation rate such that thermal distribution is
+# reached at equilibrium.
+rrout = np.array([7.72e-10,7.72e-10, 4.65e-10])
+# Smith and Crosley, 1990 model rates. Undifferentiated by quencher or v.
+
+## Lambda doublet relaxation
+lrout = 4.5e-10 # ballpark placeholder
+
+## Thermal rotational distribution
+# Use LIFBASE-calculated thermal distributions at 296 K for both halves of each
+# lambda doublet -- can later divide in half to calculate population in each
+# half of lambda doublet (equal e and f).
+# X(v"=0) rotational levels
+# F1 term (PI_3/2) where J = N + 0.5 (starts with N=1)
+rotfrac_a1 = np.array([[0.1147102,
+                      0.1373055,
+                      0.1333955,
+                      0.1108903,
+                      0.0807381,
+                      0.0521280,
+                      0.0300671,
+                      0.0155687]])
+# F2 term (PI_1/2) where J = N - 0.5 (starts with N=1)
+rotfrac_a2 = np.array([[0.0303408,
+                       0.0520817,
+                       0.0605903,
+                       0.0566615,
+                       0.0449620,
+                       0.0310304,
+                       0.0188811,
+                       0.0102155]])
+# X(v"=1) rotational levels
+# F1 term
+rotfrac_b1 = np.array([[0.1118301,
+                       0.1346591,
+                       0.1319314,
+                       0.1108789,
+                       0.0818258,
+                       0.0536861,
+                       0.0315495,
+                       0.0166880]])
+# F2 term
+rotfrac_b2 = np.array([[0.0295226,
+                       0.0509050,
+                       0.0596629,
+                       0.0563731,
+                       0.0453257,
+                       0.0317841,
+                       0.0197044,
+                       0.0108914]])
+# to avoid digging into mess of calculating populations for A_SIGMA just assume
+# distribution is more or less like X(v"=0). Tenuous connection to reality.
+rotfrac_c = rotfrac_a1+rotfrac_a2
+# build rotfrac dict for extraction in main.py
+rotfrac = {}
+rotfrac['a'] = np.concatenate((rotfrac_a1,rotfrac_a2))
+rotfrac['b'] = np.concatenate((rotfrac_b1,rotfrac_b2))
+rotfrac['c'] = rotfrac_c[0]
 
 ## HITRAN data for 3407 cm^-1 IR transition
-## v = 0 --> v = 1, J = 4.5 --> J = 3.5
+# v = 0 --> v = 1, J = 4.5 --> J = 3.5
+# loadHITRAN automates extracting these values from arbitrary IR OH line
 
 g_air = .053    # air-broadened HWHM, cm^-1 atm^-1 at 296K
 
@@ -73,14 +134,15 @@ n_air = .66    # coeff of temp dependence of air-broadened half-width
 
 # uncertainties in HITRAN data for this transition:
 # in wavenumber: 3 ('0.001 - 0.01')
-# in intensity: 4 ('10-20%'')
+# in intensity: 4 ('10-20%')
 # in g-air: 2 ('avg or estimate')
 # in g-self: 0 ('unreported')
 # in n_air: 1 ('default')
 # in air-pressure shift: 0 ('unreported') -- value given as 0
 
-## Laser operating parameters
-
+### Laser operating parameters
+# No longer call these particular values in popmodel KineticsRun calcs. Do use
+# spec_intensity function, though.
 temp = 296.    # temperature, K. All HITRAN data assumes 296K!
 
 beam_diam_IR = 5e-3    # beam diameter, m
@@ -134,7 +196,7 @@ quenchb = kqb * Q # s^-1
 kqch2o = 68.0e-11 # Wysong et al. 1990, v'=0
 kqco2 = 13.5e-11 # Wysong et al. 1990, v'=0
 kqcn2 = 1.9e-11 # Copeland et al. 1985, v'=0, N'=3 (other N available -- gets smaller with bigger N)
-kqc = kqavg(kqch2o,kqco2,kqch2o,xh2o)
+kqc = kqavg(kqcn2,kqco2,kqch2o,xh2o)
 
 quenchc = kqc * Q # s^-1
 
@@ -302,5 +364,4 @@ def voigt(xarr,amp,xcen,sigma,gamma,normalized=False):
 ## Executes when running from within module
 
 if __name__ == "__main__":
-
-    print('%g' % peak_power_UV)
+    print('ohcalcs is accessory, use main')
