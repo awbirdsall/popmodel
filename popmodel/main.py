@@ -232,7 +232,8 @@ class KineticsRun(object):
         withoutUV=False,
         rotequil=True,
         redistequil=True,
-        lumpsolve=False):
+        lumpsolve=False,
+        Lab=oh.Lab):
         # Sweep object
         self.sweep=Sweep(stype=stype,
                         tsweep=tsweep,
@@ -246,7 +247,8 @@ class KineticsRun(object):
         self.press=press # torr
         self.temp=temp # K
         self.xoh=xoh # mixing ratio of OH
-        self.ohtot = atm.press_to_numdens(press,temp)*xoh
+        self.ohtot = atm.press_to_numdens(press,temp)*xoh # molec cm^-3
+        self.Lab = Lab #  spectral intensity, W/m^2*sr*Hz
 
         # ODE solution parameters
         self.delay = delay # s, artificial UV delay to allow b to spin up
@@ -495,7 +497,7 @@ class KineticsRun(object):
         kqc = oh.kqc
 
         # Define parameters inherent to laser operation
-        Lab = oh.Lab
+        Lab = self.Lab
         Lbc = oh.Lbc
         period = oh.period_UV
         pulsewidth_UV = oh.pulsewidth_UV
@@ -637,7 +639,8 @@ class KineticsRun(object):
         
     def plotpops(self, title='Relative population in v\"=1, N\"=1, J\"=1.5',
             yl='Fraction of total OH'):
-        '''Given solution N to solveode, plot 'b' state population over time.
+        '''Given solution N to solveode, plot 'b' level, within state of
+        interest, population over time.
 
         Requires:
         -either 'abcpop' or 'N' (to make 'abcpop') from solveode input
@@ -655,8 +658,11 @@ class KineticsRun(object):
             logging.warning('need to run solveode first!')
             return
         elif hasattr(self,'abcpop')==False and hasattr(self,'N')==True:
+            # make abcpop array by appropriately summing up bins of N array
             self.abcpop = np.empty((np.size(self.tbins),self.nlevels,2))
+            # population in a/b/c level within state of interest:
             self.abcpop[:,:,0]=self.N[:,:,0:-1].sum(2)
+            # population in a/b/c level outside state of interest:
             self.abcpop[:,:,1]=self.N[:,:,-1]
 
         self.plotvslaser(self.abcpop[:,1,0]/self.ohtot,title,yl)

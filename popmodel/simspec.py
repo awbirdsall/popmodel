@@ -212,7 +212,7 @@ def simline(hitline,xarr=None,press=oh.op_press,T=oh.temp):
     return lineseries
 
 def simspec(hitlines,press=oh.op_press,T=oh.temp):
-    '''Combine set of hitlines into spectrum as pandas DataFrame.
+    '''Combine set of hitlines into spectrum, as pandas DataFrame.
 
     Call `simline` for each entry in input, without specifying frequency range
     over which to calculate absorption feature. Bundles up each pair of
@@ -243,6 +243,15 @@ def simspec(hitlines,press=oh.op_press,T=oh.temp):
     specdata = pd.DataFrame(linedict)
     specdata.interpolate(method='linear', limit=5, inplace=True)
     return specdata
+
+def makeindexnm(specdata):
+    '''Given spectrum with frequency index, make with wavelength (nm) index.
+    '''
+    nmindex = c/specdata.index.values*1e9
+    specdata_nm = pd.DataFrame(data=specdata.values, index=nmindex,
+            columns=specdata.columns)
+    specdata_nm.sort_index(inplace=True)
+    return specdata_nm
 
 def specToCSV(csvfile,specdata):
     '''write given specdata DataFrame to a csv file

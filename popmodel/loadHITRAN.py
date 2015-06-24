@@ -62,7 +62,8 @@ def importhitran(file, columns=None):
                         
     return data
 
-def filterhitran(file, Scutoff=1e-20, vabmin=3250, vabmax=3800):
+def filterhitran(file, Scutoff=1e-20, vabmin=3250, vabmax=3800,
+                 columns=(0, 2, 3, 4, 5, 7, 10, 11, 12, 13, 17, 18)):
     '''
     Filter lines from HITRAN-type par file by intensity and wavenumber.
 
@@ -82,13 +83,16 @@ def filterhitran(file, Scutoff=1e-20, vabmin=3250, vabmax=3800):
     vabmax : float
     High end of desired wavenumber range, cm^-1.
     
+    columns : tuple
+    Column numbers to keep (default: subset I've found convenient).
+    
     OUTPUTS:
     --------
     data_filter : ndarray
     Labeled array containing columns molec_id, wnum_ab, S, A, g_air, E_low,
     ugq, lgq, ulq, llq, g_up, g_low.
     '''
-    data = importhitran(file, (0, 2, 3, 4, 5, 7, 10, 11, 12, 13, 17, 18))
+    data = importhitran(file, columns)
 
     wavnuminrange = np.logical_and(data['wnum_ab']>=vabmin,
             data['wnum_ab']<=vabmax)
@@ -206,6 +210,12 @@ def extractNJlabel(x):
     Jc = Jb - 1    # Assuming P branch transition is most efficient for c<--b.
 
     return Na, Nb, Nc, Ja, Jb, Jc, label
+
+def processUV(harray):
+    '''get out things from UV lines for OH. Scratch space for now.
+    '''
+    vb = np.asarray([entry[-1] for entry in harray['ugq']]).astype('int')
+    va = np.asarray([entry[-1] for entry in harray['lgq']]).astype('int')
 
 def calculateUV(Nc, wnum_ab, E_low):
     '''
