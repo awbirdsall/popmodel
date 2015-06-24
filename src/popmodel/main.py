@@ -40,10 +40,11 @@ except ImportError:
     from yaml import Loader # a lot slower sez https://stackoverflow.com/questions/18404441/why-is-pyyaml-spending-so-much-time-in-just-parsing-a-yaml-file
 
 ##############################################################################
+# set up logging, follow python logging cookbook
+# need to initialize here AND in each class/submodule
+logger = logging.getLogger('popmodel')
+logger.setLevel(logging.WARNING)
 def stream_logging_info():
-    # set up logging, follow python logging cookbook
-    # need to initialize here AND in each class/submodule
-    logger = logging.getLogger('popmodel')
     logger.setLevel(logging.INFO)
     # console handler always runs (optional logfile through init_logfile())
     ch = logging.StreamHandler()
