@@ -40,28 +40,17 @@ except ImportError:
     from yaml import Loader # a lot slower sez https://stackoverflow.com/questions/18404441/why-is-pyyaml-spending-so-much-time-in-just-parsing-a-yaml-file
 
 ##############################################################################
-# set up logging, follow python logging cookbook
-# need to initialize here AND in each class/submodule
-logger = logging.getLogger('popmodel')
-logger.setLevel(logging.INFO)
-# console handler always runs (optional logfile through init_logfile())
-ch = logging.StreamHandler()
-ch.setLevel(logging.INFO)
-formatter = logging.Formatter('%(levelname)s:%(name)s:%(message)s')
-ch.setFormatter(formatter)
-logger.addHandler(ch)
-
-##############################################################################
-
-def importyaml(parfile):
-    '''Extract nested dict of parameters from yaml file.
-
-    See sample parameters.yaml file for full structure. Top-level keys are
-    irlaser,sweep,uvlaser,odepar,irline,uvline,detcell,rates
-    '''
-    with open(parfile, 'r') as f:
-        par = yaml.load(f,Loader=Loader) 
-    return par
+def stream_logging_info():
+    # set up logging, follow python logging cookbook
+    # need to initialize here AND in each class/submodule
+    logger = logging.getLogger('popmodel')
+    logger.setLevel(logging.INFO)
+    # console handler always runs (optional logfile through init_logfile())
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.INFO)
+    formatter = logging.Formatter('%(levelname)s:%(name)s:%(message)s')
+    ch.setFormatter(formatter)
+    logger.addHandler(ch)
 
 def init_logfile(logfile):
     '''set up FileHandler within logging to write to output file
@@ -73,9 +62,22 @@ def init_logfile(logfile):
     fh.setFormatter(logfile_formatter)
     logger.addHandler(fh)
 
-def main(hitfile,parameters,logfile=None,csvout=None,image=None):
+def importyaml(parfile):
+    '''Extract nested dict of parameters from yaml file.
+
+    See sample parameters.yaml file for full structure. Top-level keys are
+    irlaser,sweep,uvlaser,odepar,irline,uvline,detcell,rates
+    '''
+    with open(parfile, 'r') as f:
+        par = yaml.load(f,Loader=Loader) 
+    return par
+
+def
+main(hitfile,parameters,logfile=None,csvout=None,image=None,verbose=False):
     '''command-line-mode-style inputs to integration output
     '''
+    if verbose:
+        stream_logging_info()
     if logfile:
         init_logfile(logfile)
     # record to log each output filename
@@ -86,8 +88,8 @@ def main(hitfile,parameters,logfile=None,csvout=None,image=None):
             logger.info('saving '+k+' to '+v)
 
     par = importyaml(parameters)
-    k = KineticsRun(**par)
-    k.chooseline(loadHITRAN.processHITRAN(hitfile), k.irline)
+    hpar = loadHITRAN.processHITRAN(hitfile)
+    k = KineticsRun(hpar,**par)
     k.solveode()
     if csvout:
         k.savecsv(csvout)
@@ -925,19 +927,3 @@ def internalrate(yl, ratecon, equildist, ratetype):
 #         # k.plotpops()
 
 ##############################################################################
-# command line use: HITFILE PARAMETERS [-l] LOGFILE [-o] OUTPUT -i IMAGE
-# if __name__ == "__main__":
-#     parser = argparse.ArgumentParser(description=("integrate two- or "+
-#     "three-level LIF system for given HITRAN file and set of parameters"))
-#     parser.add_argument("hitfile", help="Hitran file")
-#     parser.add_argument("parameters", help="YAML parameter file")
-#     # optional parameters
-#     argdict = {"logfile":"log file","csvout":"output csv",
-#     "image":"output png image"}
-#     for arg,descr in argdict.iteritems():
-#         shortflag = "-" + arg[0]
-#         longflag = "--" + arg
-#         parser.add_argument(shortflag, longflag, help=descr)
-#     args = parser.parse_args()
-
-#     main(args.hitfile,args.parameters,args.logfile,args.csvout,args.image)

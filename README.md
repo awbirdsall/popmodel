@@ -3,7 +3,7 @@ Python package to calculate the population of molecules in particular quantum st
 
 This represents a slow accumulation of calculations I've needed to do for a research project, and would need some work to become more generalized.
 
-## Capabilities:
+## Capabilities
 - Extract absorption feature information (upper/lower states, energy gap, degeneracies, Einstein coefficients, ...) from a HITRAN-type file using `loadHITRAN`. (Vibrational lines of OH only, with limited parsing of H2O.)
 - Calculate shape of absorption feature from Doppler and pressure broadening (`main.Abs` object).
 - Automatically define fast modulation of narrow laser linewidth over broadened absorption feature (`main.Sweep` object).
@@ -48,6 +48,7 @@ k.plotpops()
 
 ## Installation
 `pip install popmodel` install from PyPI
+
 `pip install git+https://github.com/awbirdsall/popmodel` installs most recent commit on github (bleeding-edge)
 
 ## Dependencies
