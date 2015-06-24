@@ -299,10 +299,11 @@ class KineticsRun(object):
     __init__, while Abs is made after the HITRAN file is imported and the
     absorption feature selected.
     '''
-    def __init__(self,irlaser,sweep,uvlaser,odepar,irline,uvline,detcell,rates):
-        '''Initizalize KineticsRuns using dictionaries of input parameters.
+    def __init__(self,hpar, irlaser,sweep,uvlaser,odepar,irline,uvline,detcell,rates):
+        '''Initizalize KineticsRuns using dictionaries of input parameters and
+        processed HITRAN file.
         
-        These parameters can be gathered up in a yaml file (in format of
+        The input parameters can be gathered up in a yaml file (in format of
         parameters.yaml) and passed in from the command line.
         '''
         self.logger = logging.getLogger('popmodel.KineticsRun')
@@ -352,7 +353,7 @@ class KineticsRun(object):
                 rates['kqc']['o2'],
                 rates['kqc']['h2o'],
                 self.detcell['xh2o'])
-
+        self.chooseline(hpar,irline)
 
     def chooseline(self,hpar,label):
         '''Save single line of processed HITRAN file to self.hline.
