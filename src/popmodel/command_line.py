@@ -21,5 +21,5 @@ def command():
         action="store_const", const=True, default=False)
     args = parser.parse_args()
 
-    main.main(args.hitfile,args.parameters,args.logfile,args.csvout,args.image,
+    main.automate(args.hitfile,args.parameters,args.logfile,args.csvout,args.image,
             args.verbose)
