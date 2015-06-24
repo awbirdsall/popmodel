@@ -72,8 +72,7 @@ def importyaml(parfile):
         par = yaml.load(f,Loader=Loader) 
     return par
 
-def
-main(hitfile,parameters,logfile=None,csvout=None,image=None,verbose=False):
+def main(hitfile,parameters,logfile=None,csvout=None,image=None,verbose=False):
     '''command-line-mode-style inputs to integration output
     '''
     if verbose:
