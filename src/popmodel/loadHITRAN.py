@@ -101,7 +101,7 @@ def filterhitran(file, Scutoff=1e-20, vabmin=3250, vabmax=3800,
     data_filter = data[np.logical_and(data['S']>=Scutoff, wavnuminrange)]
     return data_filter
 
-def extractNJlabel_h2o(x):
+def extractnjlabel_h2o(x):
     '''
     Extract J quantum number info and unique label from HITRAN for H2O.
 
@@ -139,7 +139,7 @@ def extractNJlabel_h2o(x):
             x['wnum_ab'].astype('str')) 
     return Ja, Jb, label
 
-def extractNJlabel(x):
+def extractnjlabel(x):
     '''
     Extract N and J quantum number and unique label from HITRAN for OH.
 
@@ -216,7 +216,7 @@ def extractNJlabel(x):
 
     return Na, Nb, Nc, Ja, Jb, Jc, label
 
-def processUV(harray):
+def processuv(harray):
     '''get out things from UV lines for OH. Scratch space for now.
     '''
     vb = np.asarray([entry[-1] for entry in harray['ugq']]).astype('int')
@@ -253,7 +253,7 @@ def calculateUV(Nc, wnum_ab, E_low):
     wnum_bc = E_c - wnum_ab - E_low
     return wnum_bc
 
-def processHITRAN(file, Scutoff=1e-20, vabmin=3250, vabmax=3800):
+def processhitran(file, Scutoff=1e-20, vabmin=3250, vabmax=3800):
     '''
     Extract parameters needed for IR-UV LIF kinetics modeling from HITRAN file.
     
@@ -299,7 +299,7 @@ def processHITRAN(file, Scutoff=1e-20, vabmin=3250, vabmax=3800):
     Bab = oh.b12(Aba, ga, gb, vab)
 
     if x['molec_id'][0] == 13: # OH
-        Na, Nb, Nc, Ja, Jb, Jc, label = extractNJlabel(x)
+        Na, Nb, Nc, Ja, Jb, Jc, label = extractnjlabel(x)
 
         wnum_bc = calculateUV(Nc, x['wnum_ab'], x['E_low'])
         
@@ -321,7 +321,7 @@ def processHITRAN(file, Scutoff=1e-20, vabmin=3250, vabmax=3800):
         qyield = oh.Aca/(oh.Aca + Bcb*oh.Lbc + oh.Q*oh.kqc)
 
     elif x['molec_id'][0] == 1:  # H2O
-        Ja, Jb, label = extractNJlabel_h2o(x)
+        Ja, Jb, label = extractnjlabel_h2o(x)
         # just make everything else -1s
         Na, Nb, Nc, Jc, wnum_bc, vbc, Bcb, Bbc, FWHM_Dop_ab, \
             FWHM_Dop_bc, qyield = [np.ones_like(x['A'])*(-1)]*11
@@ -379,5 +379,5 @@ def processHITRAN(file, Scutoff=1e-20, vabmin=3250, vabmax=3800):
                 ]
 
     alldata = np.rec.fromarrays(arraylist,dtype=dtypelist)
-    loadhitran_logger.info('processHITRAN: file processed')
+    loadhitran_logger.info('processhitran: file processed')
     return alldata

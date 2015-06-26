@@ -10,7 +10,7 @@ Capabilities:
 
 - model population distribution across frequency space for v"=1 <-- v"=0
 - model different options for sweeping IR laser freq over time
-- use loadHITRAN to extract parameters from HITRAN file
+- use loadhitran to extract parameters from HITRAN file
 - collect other physical and experimental parameters from ohcalcs
 - integrate ODE describing population in quantum states
 - consider populations both within and without rotational level of interest.
@@ -21,7 +21,7 @@ Capabilities:
 # modules within package
 import ohcalcs as oh
 import atmcalcs as atm
-import loadHITRAN as loadHITRAN
+import loadhitran as loadhitran
 
 # other modules
 import numpy as np
@@ -88,7 +88,7 @@ def automate(hitfile,parameters,logfile=None,csvout=None,image=None,verbose=Fals
             logger.info('saving '+k+' to '+v)
 
     par = importyaml(parameters)
-    hpar = loadHITRAN.processHITRAN(hitfile)
+    hpar = loadhitran.processhitran(hitfile)
     k = KineticsRun(hpar,**par)
     k.solveode()
     if csvout:

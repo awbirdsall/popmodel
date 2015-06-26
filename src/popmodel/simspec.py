@@ -2,7 +2,7 @@
 # modules within package
 import ohcalcs as oh
 import atmcalcs as atm
-import loadHITRAN as loadHITRAN
+import loadhitran as loadhitran
 
 # other modules
 import numpy as np
@@ -141,7 +141,7 @@ def simline(hitline,xarr=None,press=oh.op_press,T=oh.temp):
     ----------
     hitline : ndarray
     1D recarray in format of a single line of output from
-    loadHITRAN.processHITRAN.
+    loadhitran.processhitran.
     xarr : ndarray (optional)
     1D array of frequency values to calculate spectrum over, Hz. Default is
     None, and if no xarr is given, function creates one centered on the line
@@ -227,7 +227,7 @@ def simspec(hitlines,press=oh.op_press,T=oh.temp):
     Parameters
     ----------
     hitlines : ndarray
-    recarray in the format that loadHITRAN.processHITRAN spits out
+    recarray in the format that loadhitran.processhitran spits out
 
     Outputs
     -------
