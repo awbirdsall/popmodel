@@ -73,7 +73,8 @@ def importyaml(parfile):
         par = yaml.load(f,Loader=Loader) 
     return par
 
-def automate(hitfile,parameters,logfile=None,csvout=None,image=None,verbose=False):
+def automate(hitfile,parameters,logfile=None,csvout=None,image=None,
+        verbose=False):
     '''command-line-mode-style inputs to integration output
     '''
     if verbose:
@@ -314,11 +315,21 @@ class KineticsRun(object):
         self.detcell['ohtot'] = atm.press_to_numdens(detcell['press'],
                 detcell['temp'])*detcell['xoh']
         # quencher conc
-        self.detcell['Q'] = atm.press_to_numdens(self.detcell['press'], self.detcell['temp'])
+        self.detcell['Q'] = atm.press_to_numdens(self.detcell['press'],
+                self.detcell['temp'])
         self.irlaser = irlaser
         self.uvlaser = uvlaser
         self.odepar = odepar
         self.irline = irline
+        self.uvline = uvline
+
+        if self.odepar['withoutUV']:
+            self.nlevels = 2
+        else:
+            if self.uvline['vib'][0]=='0':
+                self.nlevels = 3
+            else:
+                self.nlevels = 4
 
         # Sweep object
         if sweep['dosweep']:
@@ -374,7 +385,9 @@ class KineticsRun(object):
             f_b = int(self.hline['label'][3]) - 1
         self.rotfrac = np.array([oh.rotfrac['a'][f_a][self.hline['Na']-1],
                                  oh.rotfrac['b'][f_b][self.hline['Nb']-1],
-                                 oh.rotfrac['c'][self.hline['Nc']]])
+                                 oh.rotfrac['c'][self.hline['Nc']],
+                                 # assume Nd = Nc TODO right?
+                                 oh.rotfrac['d'][self.hline['Nc']]])
 
     def makeAbs(self):
         '''Make an absorption profile using self.hline and experimental
@@ -461,10 +474,6 @@ class KineticsRun(object):
             'step size {:.2g} s'.format(dt))
 
         # set up ODE
-        if self.odepar['withoutUV']:
-            self.nlevels=2
-        else:
-            self.nlevels=3    
 
         # Create initial state N0, all pop distributed in ground state
         self.N0 = np.zeros((self.nlevels,self.sweep.las_bins.size+3))
@@ -476,7 +485,8 @@ class KineticsRun(object):
         else:
             self.N0[0,0] = self.detcell['ohtot'] * self.rotfrac[0] / 2
             self.N0[0,-3] = 0 # no population within rot level isn't excited. 
-        self.N0[0,-2] = self.detcell['ohtot'] * self.rotfrac[0] / 2 # other half of lambda doublet
+        # other half of lambda doublet
+        self.N0[0,-2] = self.detcell['ohtot'] * self.rotfrac[0] / 2
         self.N0[0,-1] = self.detcell['ohtot'] * (1-self.rotfrac[0]) # other rot
 
         # Create array to store output at each timestep, depending on keepN:
@@ -486,6 +496,7 @@ class KineticsRun(object):
             self.N=np.empty((t_steps,self.nlevels,self.sweep.las_bins.size+3))
             self.N[0] = self.N0
         else:
+            # TODO rename abcpop to something better since ab abc abcd possible
             self.abcpop=np.empty((t_steps,self.nlevels,2))
             self.abcpop[0]=np.array([self.N0[:,0:-2].sum(1),
                 self.N0[:,-2:].sum(1)]).T
@@ -513,7 +524,8 @@ class KineticsRun(object):
             # integrate
             entry=int(round(r.t/dt))+1
             nextstep = r.integrate(r.t + dt)
-            nextstepN = np.resize(nextstep, (self.nlevels,self.sweep.las_bins.size + 3))
+            nextstepN = np.resize(nextstep,
+                                  (self.nlevels,self.sweep.las_bins.size + 3))
 
             # save output
             if self.odepar['keepN'] == True:
@@ -565,16 +577,16 @@ class KineticsRun(object):
         y=y.reshape(self.nlevels,-1)
 
         # laser intensities accounting for pulsing
-        Lab = intensity(t, self.irlaser)
-        Lbc = intensity(t, self.uvlaser)
+        Lir = intensity(t, self.irlaser)
+        Luv = intensity(t, self.uvlaser)
 
-        # Represent position of IR laser with Lab_sweep
+        # Represent position of IR laser with Lir_sweep
         if self.dosweep:
             voigt_pos=self.laspos()
         else: # laser always at single bin representing entire line
             voigt_pos = 0
-        Lab_sweep=np.zeros(self.sweep.las_bins.size + 3)
-        Lab_sweep[voigt_pos]=Lab
+        Lir_sweep=np.zeros(self.sweep.las_bins.size + 3)
+        Lir_sweep[voigt_pos]=Lir
 
         # calculate fdist and fdist_lambda, rotational and lambda distributions
         # that RET and lambda relaxation relax to.
@@ -591,22 +603,35 @@ class KineticsRun(object):
         
         # generate rates for each process
         # rates between a/b/c states
-        absorb_ab = abcrate(y, self.hline['Bab']*Lab_sweep,0,1)
-        stim_emit_ba = abcrate(y, self.hline['Bba']*Lab_sweep,1,0)
+        absorb_ab = abcrate(y, self.hline['Bab']*Lir_sweep,0,1)
+        stim_emit_ba = abcrate(y, self.hline['Bba']*Lir_sweep,1,0)
         quench_b = abcrate(y, self.rates['kqb']['tot']*self.detcell['Q'],1,0)
         # logger.info(absorb_ab)
         intermediate = absorb_ab+stim_emit_ba+quench_b
-        if not(self.odepar['withoutUV']):
-            # Lbc only excites population in particular rot/lambda level
-            Lbc_vec = np.zeros_like(y[0])
-            Lbc_vec[0:-2].fill(Lbc)
-            absorb_bc = abcrate(y, self.hline['Bbc']*Lbc_vec,1,2)
+        # TODO refactor 'Bbc" and "Bcb" out of processhitran
+        if self.nlevels > 2:
+            # Luv excites population in particular rot/lambda level
+            Luv_vec = np.zeros_like(y[0])
+            Luv_vec[0:-2].fill(Luv)
             spont_emit_ca = abcrate(y, self.rates['Aca'],2,0)
             quench_c=abcrate(y, self.rates['kqc']['tot']*self.detcell['Q'],2,0)
-            stim_emit_cb = abcrate(y, self.hline['Bcb']*Lbc_vec,2,1)
             spont_emit_cb = abcrate(y, self.rates['Acb'],2,1)
-            intermediate = (intermediate + absorb_bc + spont_emit_ca + quench_c
-                + stim_emit_cb + spont_emit_cb)
+            intermediate = (intermediate + spont_emit_ca + quench_c
+                + spont_emit_cb)
+        if self.nlevels == 3:
+            absorb_bc = abcrate(y, self.hline['Bbc']*Luv_vec,1,2)
+            stim_emit_cb = abcrate(y, self.hline['Bcb']*Luv_vec,2,1)
+            intermediate = intermediate + absorb_bc + stim_emit_cb
+        elif self.nlevels == 4:
+            absorb_bd = abcrate(y, self.hline['Bbc']*Luv_vec,1,3)
+            stim_emit_db = abcrate(y, self.hline['Bcb']*Luv_vec,3,1)
+            quench_d_vib = abcrate(y,
+                    self.rates['kqd_vib']*self.detcell['Q'],3,2)
+            quench_d=abcrate(y, self.rates['kqc']['tot']*self.detcell['Q'],2,0)
+            spont_emit_da = abcrate(y, self.rates['Ada'],3,0)
+            spont_emit_db = abcrate(y, self.rates['Adb'],3,1)
+            intermediate = (intermediate + absorb_bd + stim_emit_db
+                    + quench_d_vib + quench_d + spont_emit_da + spont_emit_db)
 
         # rotational equilibration
         rrin = self.rates['rrout'] * self.rotfrac/(1-self.rotfrac)
@@ -668,7 +693,20 @@ class KineticsRun(object):
             ax1.plot(self.tbins*1e6,
                     self.abcpop[:,2,0]/self.detcell['ohtot'], 'r-')
             ax1.set_ylabel('c state pop')
+            ax1.set_ylim(bottom=0)
             ax0.plot(0,0,'r',label='c state pop') # dummy line for legend
+            fig.subplots_adjust(right=0.9)
+
+        if self.nlevels == 4:
+            ax1 = ax0.twinx()
+            ax1.plot(self.tbins*1e6,
+                    self.abcpop[:,2,0]/self.detcell['ohtot'], 'g-')
+            ax1.plot(self.tbins*1e6,
+                    self.abcpop[:,3,0]/self.detcell['ohtot'], 'r-')
+            ax1.set_ylabel('c and d state pop')
+            ax1.set_ylim(bottom=0)
+            ax0.plot(0,0,'r',label='d state pop') # dummy line for legend
+            ax0.plot(0,0,'g',label='c state pop') # dummy line for legend
             fig.subplots_adjust(right=0.9)
 
         ax0.set_title(title)
@@ -925,5 +963,3 @@ def internalrate(yl, ratecon, equildist, ratetype):
 #         # k.sweep.matchAbsSize(k.abfeat)
 #         k.solveode(file)
 #         # k.plotpops()
-
-##############################################################################

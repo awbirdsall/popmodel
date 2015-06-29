@@ -116,11 +116,13 @@ rotfrac_b2 = np.array([[0.0295226,
 # to avoid digging into mess of calculating populations for A_SIGMA just assume
 # distribution is more or less like X(v"=0). Tenuous connection to reality.
 rotfrac_c = rotfrac_a1+rotfrac_a2
+rotfrac_d = rotfrac_c
 # build rotfrac dict for extraction in main.py
 rotfrac = {}
 rotfrac['a'] = np.concatenate((rotfrac_a1,rotfrac_a2))
 rotfrac['b'] = np.concatenate((rotfrac_b1,rotfrac_b2))
 rotfrac['c'] = rotfrac_c[0]
+rotfrac['d'] = rotfrac_d[0]
 
 ## HITRAN data for 3407 cm^-1 IR transition
 # v = 0 --> v = 1, J = 4.5 --> J = 3.5

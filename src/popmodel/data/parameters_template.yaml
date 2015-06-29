@@ -10,7 +10,7 @@ irlaser:
 # sweeping of narrow-bandwidth IR laser (optional)
 # if dosweep: False, calcs assume ir laser bandwidth perfectly matches abs line
 sweep:
-    dosweep: True
+    dosweep: False
     tsweep: 1.e-4 # s
     keepTsweep: False
     stype: 'sin' # 'sin','saw' or null (sit at center)
@@ -38,21 +38,27 @@ odepar:
     redistequil: True # RET and lambda relaxation converges to (hard-coded)
         # thermal distribution rather than instantaneous
 
-irline: 'P_1(3)ff' # follow label system in loadHITRAN
+irline: 'P_1(3)ff' # follow label system in loadhitran
 
-uvline: null # not implemented
+uvline:
+    vib: '11' # 11 or 01 vib bands
+    rovib: null # not implemented
 
 detcell: # detection cell
     press: 3 # torr
     temp: 298. # K
     xoh: 0.5e-12 # 0.5 pptv, ballpark (1.2E7 cm^-3 at 760 torr, 296 K)
     xh2o: 0.02 # important quenching species. Affects electronic and
-        # vibrational quenching rates, but RET rates do not have H2O dependence.
+        # vibrational quenching rates, but RET and lambda rates do not have H2O
+        # dependence.
 
 rates:
+    # spontaneous emission Einstein coefficients (s^-1):
     Acb: 5300 #for A2Sigma+(v'=0)-->X2Pi(v"=1) Copeland (1987)
     Aca: 1.45e+6 #s-1, for A2Sigma+(v'=0)-->X2Pi(v"=0), German (1975)
-    # Quenching speciated by N2/O2/H2O: (s^-1/(molec cm^-3))
+    Adb: 5300 # A(v'=1)-->X(v"=1)
+    Ada: 1.45e+6 # A(v'=1)-->X(v"=0)
+    # Quenching speciated by N2/O2/H2O: (s^-1/(molec cm^-3)):
     kqb: # vibrational quenching from v"=1
         n2: 1.5e-15    # Only one reported measurement (D'Ottone et al.), but
             # this term is a minor contribution
@@ -65,12 +71,20 @@ rates:
             # gets smaller with bigger N)
         o2: 13.5e-11 # Wysong et al. 1990, v'=0
         h2o: 68.0e-11 # Wysong et al. 1990, v'=0
+    # kqd: # electronic quenching from A(v'=1)
+    #     n2: 1.9e-11 # Copeland et al. 1985, v'=0, N'=3 (other N available --
+    #         # gets smaller with bigger N)
+    #     o2: 13.5e-11 # Wysong et al. 1990, v'=0
+    #     h2o: 68.0e-11 # Wysong et al. 1990, v'=0
+    kqd_vib: 1.0e-10 # vibrational quenching from A(v'=1) -> A(v'=0)
     rrout: # rotational relaxation out of single rotational level (a/b/c)
     # Smith and Crosley, 1990 model rates. Undifferentiated by quencher or v.
         - 7.72e-10
         - 7.72e-10
         - 4.65e-10
+        - 4.65e-10
     lrout: # lambda relaxation out of single lambda doublet level (a/b)
         - 4.5e-10 # ballpark value used in Kliner and Farrow 1999 based on lit
         - 4.5e-10 # above
         - 0.0 # no lambda doublets in SIGMA state
+        - 0.0
