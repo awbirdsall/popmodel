@@ -51,6 +51,7 @@ detcell: # detection cell
     xh2o: 0.02 # important quenching species. Affects electronic and
         # vibrational quenching rates, but RET and lambda rates do not have H2O
         # dependence.
+    fluorwl: '282' # '282' or '308' or 'both'
 
 rates:
     # spontaneous emission Einstein coefficients (s^-1):

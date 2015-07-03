@@ -3,14 +3,11 @@
 Created on Tue May 27 16:10:34 2014
 
 @author: abirdsall
-
-Next steps:
-Degeneracy of c state?
 """
 import atmcalcs as atm
+import ohcalcs as oh
 
 import numpy as np
-import ohcalcs as oh
 import logging
 from fractions import Fraction
 
@@ -307,9 +304,9 @@ def processhitran(file, Scutoff=1e-20, vabmin=3250, vabmax=3800):
         vbc = atm.wavenum_to_Hz*wnum_bc
         
         # Remaining Einstein coefficients:
-        # Assuming same Acb regardless of b and c rotational level. Could do better
-        # looking at a dictionary of A values from HITRAN. Not a high priority to
-        # improve since not currently using UV calcs. TODO
+        # Assuming same Acb regardless of b and c rotational level. Could do
+        # better looking at a dictionary of A values from HITRAN. Not a high
+        # priority to improve since not currently using UV calcs. TODO
         Bcb = oh.b21(oh.Acb, vbc)
         Bbc = oh.b12(oh.Acb, gb, oh.gc, vbc)
 
@@ -318,7 +315,7 @@ def processhitran(file, Scutoff=1e-20, vabmin=3250, vabmax=3800):
         FWHM_Dop_bc = oh.fwhm_doppler(vbc, oh.temp, oh.mass)
 
         # Quantum yield:
-        qyield = oh.Aca/(oh.Aca + Bcb*oh.Lbc + oh.Q*oh.kqc)
+        qyield = oh.Aca / (oh.Aca + Bcb*oh.Lbc + oh.Q*oh.kqc)
 
     elif x['molec_id'][0] == 1:  # H2O
         Ja, Jb, label = extractnjlabel_h2o(x)

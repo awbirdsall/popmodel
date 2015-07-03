@@ -379,14 +379,15 @@ class KineticsRun(object):
         # extract rotation fraction for a b and c
         # figure out which 'F1' or 'F2' series that a and b state are:
         f_a = int(self.hline['label'][2]) - 1
-        if self.hline['label'][3] == '(':
+        if self.hline['label'][3] == '(': # i.e., not '12' or '21' line
             f_b = f_a
         else:
             f_b = int(self.hline['label'][3]) - 1
         self.rotfrac = np.array([oh.rotfrac['a'][f_a][self.hline['Na']-1],
                                  oh.rotfrac['b'][f_b][self.hline['Nb']-1],
                                  oh.rotfrac['c'][self.hline['Nc']],
-                                 # assume Nd = Nc TODO right?
+                                 # TODO refactor 'Nc" out of hline
+                                 # assume Nd = Nc
                                  oh.rotfrac['d'][self.hline['Nc']]])
 
     def makeAbs(self):
@@ -398,6 +399,52 @@ class KineticsRun(object):
         self.abfeat.makeProfile(press=self.detcell['press'],
                                 T=self.detcell['temp'],    
                                 g_air=self.hline['g_air'])
+
+    def calcfluor(self, timerange = None):
+        '''Given integrated population, calculate amount of fluorescence.
+        '''
+        # define time range
+        if timerange is not None:
+            dt = timerange[1]-timerange[0]
+            start = np.searchsorted(self.tbins, timerange[0])
+            end = np.searchsorted(self.tbins, timerange[1])
+            dt_s = np.s_[start:end]
+        else:
+            dt = self.tbins[-1] - self.tbins[0]
+            dt_s = np.s_[:]
+
+        # define relevant rates: fluor, spont_emit, stim_emit, quench
+        # depends on fluorescence that is detected
+        v0fluor = self.nlevels == 3 or (self.nlevels == 4 and
+            self.detcell['fluorwl'] == '308')
+        v1fluor = self.nlevels == 4 and self.detcell['fluorwl'] == '282'
+        v1v0fluor = self.nlevels == 4 and self.detcell['fluorwl'] == 'both'
+        if v0fluor:
+            fluorpop = self.abcpop[dt_s,2,:]
+            spont_emit = self.rates['Aca']
+            fluor = spont_emit
+            quench = self.rates['kqc']['tot']
+            # for stimulated emission from single rotational level, scale by
+            # factor in rot level at each instance
+            rot_factor = np.empty_like(self.tbins[start:end])
+            idx_zeros = self.abcpop[dt_s,2,:].sum(1) == 0
+            rot_factor[idx_zeros] = 0
+            rot_factor[~idx_zeros] = (self.abcpop[dt_s,2,0][~idx_zeros]/
+                self.abcpop[dt_s,2,:].sum(1)[~idx_zeros,np.newaxis])
+            stim_emit = intensity(self.tbins[start:end], uvlaser) * self.hline['Bcb'] * rot_factor
+        elif v1fluor:
+            if self.detcell['fluorwl'] == '282':
+                fluorpop = self.abcpop[dt_s,3,:].sum()
+                fluor = self.rates['Ada']
+            elif self.detcell['fluorwl'] == '308':
+                fluorpop = self.abcpop[dt_s,2,:].sum()
+                fluor = self.rates['Aca']
+            spont_emit = self.rates['Ada'] + self.rates['Adb']
+        elif v1v0fluor:
+            pass
+        # qyield is function of time (nonlinear) because stim_emit can change
+        qyield = fluor / (spont_emit + stim_emit + quench)
+        fluorescence = fluorpop/dt * qyield
 
     def solveode(self):
         '''Integrate ode describing two-photon LIF.
@@ -574,7 +621,7 @@ class KineticsRun(object):
         '''
         # ode method requires y passed in and out of dN to be one-dimensional.
         # For calculations within dN, reshape y back into 2D form of N
-        y=y.reshape(self.nlevels,-1)
+        y = y.reshape(self.nlevels,-1)
 
         # laser intensities accounting for pulsing
         Lir = intensity(t, self.irlaser)
@@ -582,72 +629,80 @@ class KineticsRun(object):
 
         # Represent position of IR laser with Lir_sweep
         if self.dosweep:
-            voigt_pos=self.laspos()
+            voigt_pos = self.laspos()
         else: # laser always at single bin representing entire line
             voigt_pos = 0
-        Lir_sweep=np.zeros(self.sweep.las_bins.size + 3)
-        Lir_sweep[voigt_pos]=Lir
+        Lir_sweep = np.zeros(self.sweep.las_bins.size + 3)
+        Lir_sweep[voigt_pos] = Lir
 
-        # calculate fdist and fdist_lambda, rotational and lambda distributions
-        # that RET and lambda relaxation relax to.
+        # calculate fdist and fdist_lambda, distribution *within* single
+        # rotational level or lambda level that is relaxed to
         if self.odepar['redistequil']:
             # equilibrium distribution in ground state, as calced for N0
-            fdist = (self.N0[0,0:-1]/self.N0[0,0:-1].sum())
-            fdist_lambda = fdist[:-1]/fdist[:-1].sum()
+            fdist = (self.N0[0,:-1] / self.N0[0,:-1].sum())
+            fdist_lambda = fdist[:-1] / fdist[:-1].sum()
+            # for A-state, assume distribution same as N0 but lambda-doublet is
+            # non-existent.
+            fdist_A = np.append(fdist_lambda, 0)
+            fdist_array = np.vstack((fdist,fdist,fdist_A,fdist_A))
         elif y[0,0:-1].sum() != 0:
             # instantaneous distribution in ground state
-            fdist = (y[0,0:-1]/y[0,0:-1].sum())
-            fdist_lambda = fdist[:-1]/fdist[:-1].sum()
+            fdist = (y[0,:-1] / y[0,:-1].sum())
+            fdist_lambda = fdist[:-1] / fdist[:-1].sum()
+            fdist_A = np.append(fdist_lambda,0)
+            fdist_array = np.vstack((fdist,fdist,fdist_A,fdist_A))
         else:
-            fdist = 0
+            fdist_array = np.zeros((y.shape[0], y.shape[1] - 1))
         
         # generate rates for each process
-        # rates between a/b/c states
-        absorb_ab = abcrate(y, self.hline['Bab']*Lir_sweep,0,1)
-        stim_emit_ba = abcrate(y, self.hline['Bba']*Lir_sweep,1,0)
-        quench_b = abcrate(y, self.rates['kqb']['tot']*self.detcell['Q'],1,0)
-        # logger.info(absorb_ab)
-        intermediate = absorb_ab+stim_emit_ba+quench_b
+        # vibronic rates
+        absorb_ab = vibronicrate(y, self.hline['Bab'] * Lir_sweep, 0, 1)
+        stim_emit_ba = vibronicrate(y, self.hline['Bba'] * Lir_sweep, 1, 0)
+        quench_b = vibronicrate(y, self.rates['kqb']['tot'] * self.detcell['Q'],
+                1, 0)
+        intermediate = absorb_ab + stim_emit_ba + quench_b
         # TODO refactor 'Bbc" and "Bcb" out of processhitran
         if self.nlevels > 2:
             # Luv excites population in particular rot/lambda level
             Luv_vec = np.zeros_like(y[0])
             Luv_vec[0:-2].fill(Luv)
-            spont_emit_ca = abcrate(y, self.rates['Aca'],2,0)
-            quench_c=abcrate(y, self.rates['kqc']['tot']*self.detcell['Q'],2,0)
-            spont_emit_cb = abcrate(y, self.rates['Acb'],2,1)
+            spont_emit_ca = vibronicrate(y, self.rates['Aca'], 2, 0)
+            quench_c=vibronicrate(y,
+                    self.rates['kqc']['tot'] * self.detcell['Q'], 2, 0)
+            spont_emit_cb = vibronicrate(y, self.rates['Acb'], 2, 1)
             intermediate = (intermediate + spont_emit_ca + quench_c
                 + spont_emit_cb)
         if self.nlevels == 3:
-            absorb_bc = abcrate(y, self.hline['Bbc']*Luv_vec,1,2)
-            stim_emit_cb = abcrate(y, self.hline['Bcb']*Luv_vec,2,1)
+            absorb_bc = vibronicrate(y, self.hline['Bbc'] * Luv_vec, 1, 2)
+            stim_emit_cb = vibronicrate(y, self.hline['Bcb'] * Luv_vec, 2, 1)
             intermediate = intermediate + absorb_bc + stim_emit_cb
         elif self.nlevels == 4:
-            absorb_bd = abcrate(y, self.hline['Bbc']*Luv_vec,1,3)
-            stim_emit_db = abcrate(y, self.hline['Bcb']*Luv_vec,3,1)
-            quench_d_vib = abcrate(y,
-                    self.rates['kqd_vib']*self.detcell['Q'],3,2)
-            quench_d=abcrate(y, self.rates['kqc']['tot']*self.detcell['Q'],2,0)
-            spont_emit_da = abcrate(y, self.rates['Ada'],3,0)
-            spont_emit_db = abcrate(y, self.rates['Adb'],3,1)
+            absorb_bd = vibronicrate(y, self.hline['Bbc'] * Luv_vec, 1, 3)
+            stim_emit_db = vibronicrate(y, self.hline['Bcb'] * Luv_vec, 3, 1)
+            quench_d_vib = vibronicrate(y,
+                    self.rates['kqd_vib'] * self.detcell['Q'], 3, 2)
+            quench_d=vibronicrate(y,
+                    self.rates['kqc']['tot'] * self.detcell['Q'], 3, 0)
+            spont_emit_da = vibronicrate(y, self.rates['Ada'], 3, 0)
+            spont_emit_db = vibronicrate(y, self.rates['Adb'], 3, 1)
             intermediate = (intermediate + absorb_bd + stim_emit_db
                     + quench_d_vib + quench_d + spont_emit_da + spont_emit_db)
 
         # rotational equilibration
-        rrin = self.rates['rrout'] * self.rotfrac/(1-self.rotfrac)
-        rrates = np.array([self.rates['rrout'],rrin]).T
+        rrin = self.rates['rrout'] * self.rotfrac / (1 - self.rotfrac)
+        rrates = np.array([self.rates['rrout'], rrin]).T
         if self.odepar['rotequil']:
-            rrvalues = np.vstack([internalrate(l, r, fdist, 'rot') for r,l
-                in zip(rrates, y)])
+            rrvalues = np.vstack([internalrate(yl, r * self.detcell['Q'], dist,
+                'rot') for yl,r,dist in zip(y, rrates, fdist_array)])
         else:
             rrvalues = np.zeros_like(y)
 
         # lambda equilibration
         lrin = self.rates['lrout'] # assume equal equilibrium pops
-        lrates = np.array([self.rates['lrout'],lrin]).T
+        lrates = np.array([self.rates['lrout'], lrin]).T
         if self.odepar['lambdaequil']:
-            lrvalues = np.vstack([internalrate(l, r, fdist_lambda, 'lambda')
-                for r,l in zip(lrates, y)])
+            lrvalues = np.vstack([internalrate(yl, r * self.detcell['Q'],
+                fdist_lambda, 'lambda') for yl,r in zip(y, lrates)])
         else:
             lrvalues = np.zeros_like(y)
 
@@ -841,19 +896,29 @@ class KineticsRun(object):
             self.abfeat.pop=data['pop']
 
 def intensity(t, laser):
-    '''Calculate spec intensity of laser at given time.
+    '''Calculate spec intensity of laser at given array of times.
 
     Assumes total integration time less than rep rate.
     '''
-    if not(laser['pulse']) or (t>laser['delay'] and
-            t<laser['pulse']+laser['delay']):
-        area = np.pi*(laser['diam']*0.5)**2
-        L = oh.spec_intensity(laser['power'],area,laser['bandwidth'])
+    t = np.asarray(t)
+    scalar_input = False
+    if t.ndim == 0:
+        t = t[None] # convert to 1D
+        scalar_input = True
+    L = np.zeros_like(t)
+    area = np.pi*(laser['diam']*0.5)**2
+    spec_intensity = oh.spec_intensity(laser['power'],area,laser['bandwidth'])
+    if not(laser['pulse']):
+        L.fill(spec_intensity)
     else:
-        L = 0
+        whenon = (t>laser['delay']) & (t<laser['pulse']+laser['delay'])
+        L[whenon] = spec_intensity
+
+    if scalar_input:
+        return np.squeeze(L)
     return L
 
-def abcrate(y, rateconst, start, final):
+def vibronicrate(y, rateconst, start, final):
     '''calculate contribution to overall rate array for process that
     goes between a/b/c states.
 
@@ -886,8 +951,9 @@ def internalrate(yl, ratecon, equildist, ratetype):
     Parameters
     ----------
     yl : array
-    1D array of population in single a/b/c level
-    ratecon : list
+    1D array of population in single a/b/c level. Assumes consistent format of
+    (bins within lambda doublet), lambda doublet, other rotational levels.
+    ratecon : list (length 2)
     First-order rate constants for forward and reverse process, s^-1
     equildist : float
     Equilibrium distribution of process
@@ -899,19 +965,20 @@ def internalrate(yl, ratecon, equildist, ratetype):
     term : np.ndarray
     2D array shaped like y containing rates for process
     '''
-    term = np.empty_like(yl)
+    term = np.zeros_like(yl)
     if ratetype == 'rot':
         rngin = np.s_[0:-1]
         rngout = np.s_[-1]
     elif ratetype == 'lambda':
         rngin = np.s_[0:-2]
-        rngout = np.s_[-1]
+        rngout = np.s_[-2]
     else:
         ValueError('ratetype needs to be \'rot\' or \'lambda\'')
 
     if yl[rngin].sum() != 0:
-        term[rngin] = -yl[rngin]*ratecon[0] + yl[rngout]*ratecon[1]*equildist
-        term[rngout] = yl[rngin].sum()*ratecon[0] - yl[rngout]*ratecon[1]
+        term[rngin] = (-yl[rngin] * ratecon[0] +
+                yl[rngout] * ratecon[1] * equildist)
+        term[rngout] = yl[rngin].sum() * ratecon[0] - yl[rngout] * ratecon[1]
     else:
         term.fill(0)
     return term
