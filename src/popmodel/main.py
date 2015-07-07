@@ -38,7 +38,6 @@ try:
     from yaml import CLoader as Loader
 except ImportError:
     from yaml import Loader # a lot slower sez https://stackoverflow.com/questions/18404441/why-is-pyyaml-spending-so-much-time-in-just-parsing-a-yaml-file
-
 ##############################################################################
 # set up logging, follow python logging cookbook
 # need to initialize here AND in each class/submodule
@@ -323,13 +322,20 @@ class KineticsRun(object):
         self.irline = irline
         self.uvline = uvline
 
+        self.levelsidx= levels
+
         if self.odepar['withoutUV']:
             self.nlevels = 2
         else:
+            self.levelsidx.update({'uv_lower': 1})
             if self.uvline['vib'][0]=='0':
                 self.nlevels = 3
+                self.levelsidx.update({'uv_upper': 2})
             else:
                 self.nlevels = 4
+                self.levelsidx.update({'uv_upper': 3})
+
+        self.system = buildsystem(self.nlevels)
 
         # Sweep object
         if sweep['dosweep']:
@@ -389,6 +395,10 @@ class KineticsRun(object):
                                  # TODO refactor 'Nc" out of hline
                                  # assume Nd = Nc
                                  oh.rotfrac['d'][self.hline['Nc']]])
+        self.rates['Bcb'] = self.hline['Bcb']
+        self.rates['Bbc'] = self.hline['Bbc']
+        self.rates['Bba'] = self.hline['Bba']
+        self.rates['Bab'] = self.hline['Bab']
 
     def makeAbs(self):
         '''Make an absorption profile using self.hline and experimental
@@ -699,39 +709,72 @@ class KineticsRun(object):
         else:
             fdist_array = np.zeros((y.shape[0], y.shape[1] - 1))
         
+        '''To implement: cleaner implementation of 'internal' processes
+
+        # within dN
+        if self.solveode['rotequil']:
+            rotarray = self.rotprocesses(y, t)
+        else:
+            rotarray = np.zeros_like(y)
+        if self.solveode['lambdaequil']:
+            lambdaarray = self.lambdaprocesses(y, t)
+        else:
+            lambdaarray = np.zeros_like(y)
+        internalarray = rotarray + lambdaarray
+        ratearray = vibronicarray + internalarray
+        return ratearray
+
+        def lambdaprocesses(self, y, t):
+            levellambdarates = []
+            for level in self.system:
+                if level.term == 'pi':
+                    levelrate = makeinternalrate('lambda')
+                elif level.term == 'sigma':
+                    levelrate = np.zeros_like(level)
+                levellambdarates.append(levelrate)
+            return np.vstack(levellambdarates)
+
+        def rotprocesses(self, y, t):
+            levelrotrates = []
+            for level in self.system:
+                if level.term == 'pi':
+                    levelrate = makeinternalrate('rot_pi')
+                elif level.term == 'sigma':
+                    levelrate = makeinternalrate('rot_sigma')
+            return np.vstack(levelrotrates)                    
+
+        def self.makeinternalrate(ratetype, yl, equildist):
+            internalrate = np.zeros_like(yl)
+            baserate = internal_dict[ratetype][0]
+            ratecoeff = internal_dict[ratetype][1]
+            startrng = getrange(internal_dict[ratetype][2])
+            endrng = getrange(internal_dict[ratetype][3])
+            individuatedrates = (- yl[startrng] * baserate + yl[rngout]
+                * baserate_reverse * equildist)
+            internalrate[startrng] = individuatedrates
+            internalrate[endrng] = -individuatedrates.sum()
+            return internalrate
+
+internal_dict = {'rot_pi':[self.rates.rr,
+                           'quencher',
+                           'rot_level',
+                           'rot_other'],
+                 'rot_sigma':[self.rates.rr,
+                              'quencher',
+                              'lambda_half',
+                              'rot_other'],
+                 'lambda':[self.rates.lambda,
+                           'quencher',
+                           'lambda_half',
+                           'lambda_other']}
+
+
+
+'''
         # generate rates for each process
         # vibronic rates
-        absorb_ab = vibronicrate(y, self.hline['Bab'] * Lir_sweep, 0, 1)
-        stim_emit_ba = vibronicrate(y, self.hline['Bba'] * Lir_sweep, 1, 0)
-        quench_b = vibronicrate(y, self.rates['kqb']['tot'] * self.detcell['Q'],
-                1, 0)
-        intermediate = absorb_ab + stim_emit_ba + quench_b
-        # TODO refactor 'Bbc" and "Bcb" out of processhitran
-        if self.nlevels > 2:
-            # Luv excites population in particular rot/lambda level
-            Luv_vec = np.zeros_like(y[0])
-            Luv_vec[0:-2].fill(Luv)
-            spont_emit_ca = vibronicrate(y, self.rates['Aca'], 2, 0)
-            quench_c=vibronicrate(y,
-                    self.rates['kqc']['tot'] * self.detcell['Q'], 2, 0)
-            spont_emit_cb = vibronicrate(y, self.rates['Acb'], 2, 1)
-            intermediate = (intermediate + spont_emit_ca + quench_c
-                + spont_emit_cb)
-        if self.nlevels == 3:
-            absorb_bc = vibronicrate(y, self.hline['Bbc'] * Luv_vec, 1, 2)
-            stim_emit_cb = vibronicrate(y, self.hline['Bcb'] * Luv_vec, 2, 1)
-            intermediate = intermediate + absorb_bc + stim_emit_cb
-        elif self.nlevels == 4:
-            absorb_bd = vibronicrate(y, self.hline['Bbc'] * Luv_vec, 1, 3)
-            stim_emit_db = vibronicrate(y, self.hline['Bcb'] * Luv_vec, 3, 1)
-            quench_d_vib = vibronicrate(y,
-                    self.rates['kqd_vib'] * self.detcell['Q'], 3, 2)
-            quench_d=vibronicrate(y,
-                    self.rates['kqc']['tot'] * self.detcell['Q'], 3, 0)
-            spont_emit_da = vibronicrate(y, self.rates['Ada'], 3, 0)
-            spont_emit_db = vibronicrate(y, self.rates['Adb'], 3, 1)
-            intermediate = (intermediate + absorb_bd + stim_emit_db
-                    + quench_d_vib + quench_d + spont_emit_da + spont_emit_db)
+        vibroniclist = self.vibronicprocesses(y, t)
+        vibronicarray = np.sum(vibroniclist.values(), axis=0)
 
         # rotational equilibration
         rrin = self.rates['rrout'] * self.rotfrac / (1 - self.rotfrac)
@@ -751,10 +794,63 @@ class KineticsRun(object):
         else:
             lrvalues = np.zeros_like(y)
 
-        result = intermediate + rrvalues + lrvalues
+        result = vibronicarray + rrvalues + lrvalues
         # flatten to 1D array as required
         return result.ravel()
 
+    def ratecoeff(self,ratetype,t):
+        '''Value to multiply base rate by to get first-order rate constant.
+        
+        Time-dependent when 'coeff' is pulsed laser intensity.
+        '''
+        if ratetype == 'ir_laser':
+            coeff = intensity(t, self.irlaser)
+        elif ratetype == 'uv_laser':
+            coeff = intensity(t, self.uvlaser)
+        elif ratetype == 'quencher':
+            coeff = self.detcell['Q']
+        else:
+            coeff = 1
+        return coeff
+
+    def vibronicprocesses(self, y, t):
+        '''Create dict of rates for vibronic processes at given instant.
+
+        Builds dict from those processes in vibronic_dict that start and end in
+        vibronic levels that are included in the given KineticsRun instance.
+        '''
+        vibronicratearrays = {}
+        for process in vibronic_dict:
+            if ((self.startlevel_idx(process) < self.nlevels) and 
+                    (self.endlevel_idx(process) < self.nlevels)):
+                ratearray = np.zeros_like(y)
+                startlevel = self.startlevel_idx(process)
+                startrng = self.getrngidx(getstartrng(process))()
+                endlevel = self.endlevel_idx(process)
+                endrng = self.getrngidx(getendrng(process))()
+
+                base = self.baserate_k(process)
+                coeff = self.ratecoeff(coefftype(process),t)
+                conc = y[startlevel,startrng]
+                rate = base*coeff*conc
+                # for vibronic process, startrng = endrng
+                ratearray[startlevel,startrng] = -rate
+                ratearray[endlevel,endrng] = rate
+                vibronicratearrays.update({process:ratearray})
+        return vibronicratearrays
+
+    def getrngidx(self, rnglabel):
+        '''Look up function that returns index for named range within level
+
+        Returns an unbound function because las_bin location is function of
+        time.
+        '''
+        rng = {'las_bin': self.laspos,
+                'half_lambda': lambda: np.s_[:-2],
+                'rot_level': lambda: np.s_[:-1],
+                'rot_other': lambda: np.s_[-1],
+                'full': lambda: np.s_[:]}
+        return rng[rnglabel]
 
     def plotpops(self, title='excited state population', yl='b state pop',
             pngout = None):
@@ -939,6 +1035,139 @@ class KineticsRun(object):
             self.abfeat = Abs(0)
             self.abfeat.abs_freq=data['abs_freq']
             self.abfeat.pop=data['pop']
+
+    # interpret ratetype parameters in terms of particular KineticsRun instance
+    def baserate_k(self, ratetype):
+        return getnested(baserate(ratetype), self.rates)
+    def startlevel_idx(self, ratetype):
+        return self.levelsidx[startlevel(ratetype)]
+    def endlevel_idx(self, ratetype):
+        return self.levelsidx[endlevel(ratetype)]
+
+def getnested(keys, d):
+    '''Access data in nested dict using a list of keys.'''
+    if not isinstance(keys, list): # handle single key
+        keys = [keys]
+    return reduce(dict.__getitem__, keys, d)
+
+# GLOBAL VARS
+levels = {'pi_v0': 0, 'pi_v1': 1, 'sigma_v0': 2, 'sigma_v1': 3}
+
+# Form of vibronic_dict:
+# rate constant, 'concentration' it needs to be multiplied by (or `None` if
+# first-order), initial level, final level, initial range (within level), final
+# range.
+vibronic_dict = {'absorb_ir':['Bba',
+                             'ir_laser',
+                             'pi_v0',
+                             'pi_v1',
+                             'las_bin',
+                             'las_bin'],
+                'absorb_uv':['Bcb',
+                             'uv_laser',
+                             'uv_lower',
+                             'uv_upper',
+                             'half_lambda',
+                             'half_lambda'],
+                'stim_emit_ir':['Bba',
+                                'ir_laser',
+                                'pi_v1',
+                                'pi_v0',
+                                'las_bin',
+                                'las_bin'],
+                'stim_emit_uv':['Bcb',
+                                'uv_laser',
+                                'uv_upper',
+                                'uv_lower',
+                                'half_lambda',
+                                'half_lambda'],
+                # 'spont_emit_p1p0':['Aba',
+                #                  None,
+                #                  'pi_v1',
+                #                  'pi_v0',
+                #                  'full',
+                #                  'full'],
+                'vib_quench_p1p0':[['kqb','tot'],
+                                 'quencher',
+                                 'pi_v1',
+                                 'pi_v0',
+                                 'full',
+                                 'full'],
+                'elec_quench_s0p0':[['kqc','tot'],
+                                    'quencher',
+                                    'sigma_v0',
+                                    'pi_v0',
+                                    'full',
+                                    'full'],
+                'elec_quench_s1p0':[['kqc','tot'],
+                                    'quencher',
+                                    'sigma_v1',
+                                    'pi_v0',
+                                    'full',
+                                    'full'],
+                'spont_emit_s0p0':['Aca',
+                                 None,
+                                 'sigma_v0',
+                                 'pi_v0',
+                                 'full',
+                                 'full'],
+                'spont_emit_s0p1':['Acb',
+                                   None,
+                                   'sigma_v0',
+                                   'pi_v1',
+                                   'full',
+                                   'full'],
+                'spont_emit_s1p0':['Ada',
+                                   None,
+                                   'sigma_v1',
+                                   'pi_v0',
+                                   'full',
+                                   'full'],
+                'spont_emit_s1p1':['Adb',
+                                   None,
+                                   'sigma_v1',
+                                   'pi_v1',
+                                   'full',
+                                   'full'],
+                'vib_quench_s1s0':[['kqc','tot'],
+                                   'quencher',
+                                   'sigma_v1',
+                                   'sigma_v0',
+                                   'full',
+                                   'full']}
+# accessors for vibronic_dict
+def baserate(ratetype):
+    return vibronic_dict[ratetype][0]
+def coefftype(ratetype):
+    return vibronic_dict[ratetype][1]
+def startlevel(ratetype):
+    return vibronic_dict[ratetype][2]
+def endlevel(ratetype):
+    return vibronic_dict[ratetype][3]
+def getstartrng(ratetype):
+    return vibronic_dict[ratetype][4]
+def getendrng(ratetype):
+    return vibronic_dict[ratetype][5]
+
+def buildsystem(nlevels):
+    levela = {'term': 'pi', 'startof': ['absorb_ir']}
+    levelb = {'term': 'pi', 'startof': ['absorb_uv',
+                                        'vib_quench',
+                                        'stim_emit_ir',
+                                        'spont_emit']}
+    levelc = {'term': 'sigma', 'startof' : ['elec_quench',
+                                           'stim_emit_uv',
+                                           'spont_emit']}
+    leveld = {'term': 'sigma', 'startof' : ['elec_quench',
+                                           'stim_emit_uv',
+                                           'spont_emit',
+                                           'vib_quench']}
+    if nlevels == 2:
+        return [levela, levelb]
+    elif nlevels == 3:
+        return [levela, levelb, levelc]
+    else:
+        return [levela, levelb, levelc, leveld]
 
 def intensity(t, laser):
     '''Calculate spec intensity of laser at given array of times.
