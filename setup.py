@@ -36,7 +36,8 @@ setup(
     packages=['popmodel'],
     install_requires=['matplotlib','pandas','numpy','scipy','pyyaml'],
     package_data={
-        'popmodel': ['data/parameters_sample.yaml'],
+        'popmodel': ['data/parameters_sample.yaml',
+            'data/hitran_sample.par'],
     },
     include_package_data=True,
     entry_points={
