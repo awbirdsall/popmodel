@@ -8,3 +8,6 @@ dist/
 *.png
 parameters_sweep.yaml
 parameters_test.yaml
+*.npz
+popmodel.egg-info/
+*.csv
