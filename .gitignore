@@ -1,7 +1,6 @@
 *.swp
 *.pyc
 *.un~
-*.par
 build/
 src/popmodel.egg-info/
 dist/
