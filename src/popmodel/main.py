@@ -94,7 +94,7 @@ def automate(hitfile,parameters,logfile=None,csvout=None,image=None,
     if csvout:
         k.savecsv(csvout)
     if image:
-        k.plotpops(pngout = image)
+        k.popsfigure().savefig(image)
 
 ##############################################################################
 class Sweep(object):
@@ -798,6 +798,7 @@ internal_dict = {'rot_pi':[self.rates.rr,
         # flatten to 1D array as required
         return result.ravel()
 
+
     def ratecoeff(self,ratetype,t):
         '''Value to multiply base rate by to get first-order rate constant.
         
@@ -840,7 +841,7 @@ internal_dict = {'rot_pi':[self.rates.rr,
         return vibronicratearrays
 
     def getrngidx(self, rnglabel):
-        '''Look up function that returns index for named range within level
+        '''Look up slice for named range within level
 
         Returns an unbound function because las_bin location is function of
         time.
@@ -852,13 +853,10 @@ internal_dict = {'rot_pi':[self.rates.rr,
                 'full': lambda: np.s_[:]}
         return rng[rnglabel]
 
-    def plotpops(self, title='excited state population', yl='b state pop',
-            pngout = None):
-        '''For solved KineticsRun, plot excited state population over time.
+    def popsfigure(self, title='population dynamics', subpop=None):
+        '''For solved KineticsRun, create figure plotting selected subpops.
 
-        Requires:
-        -either 'abcpop' or 'N' (to make 'abcpop') from solveode input
-        -to make 'abcpop' from 'N', need tbins, nlevels
+        Requires `N` as created by `KineticsRun.solveode()`.
 
         Parameters
         ----------
@@ -868,52 +866,97 @@ internal_dict = {'rot_pi':[self.rates.rr,
         yl : str
         Y-axis label to display.
 
-        pngout : str
-        filename to save PNG output. Displays plot if not given.
+        subpop : list
+        List describing subpopulations to plot. Each string in list must be
+        a  three-character code of form 'lsn' where l is level (a, b, c, or d),
+        s is sublevel ([s]wept, [h]alf of lambda doublet, lambda [d]oublet, or
+        entire [l]evel (default) and n is normalization (fraction of lambda
+        [d]oublet, [l]evel, entire [p]opulation (default), or [a]bsolute).
+
+        Outputs
+        -------
+        fig : matplotlib figure
+        Figure with each subpop plotted. Subpops in 'a' and 'b' vibronic levels
+        are plotted in ax0, with the left y-axis scale. Subpops in 'c' and 'd'
+        are plotted in ax1, with the right y-axis scale.
         '''
-        # make abcpop array if not already calculated
-        if hasattr(self,'abcpop')==False and hasattr(self,'N')==False:
-            logger.warning('need to run solveode first!')
-            return
-        elif hasattr(self,'abcpop')==False and hasattr(self,'N')==True:
-            self.abcpop = np.empty((np.size(self.tbins),self.nlevels,2))
-            self.abcpop[:,:,0]=self.N[:,:,0:-2].sum(2)
-            self.abcpop[:,:,1]=self.N[:,:,-2:].sum(2)
         
         fig, (ax0) = plt.subplots()
-        ax0.plot(self.tbins*1e6, self.abcpop[:,1,0]/self.detcell['ohtot'],
-                'b-',label='b state pop')
+        ax1 = ax0.twinx()
+        fig.subplots_adjust(right=0.8)
 
-        if self.nlevels == 3:
-            ax1 = ax0.twinx()
-            ax1.plot(self.tbins*1e6,
-                    self.abcpop[:,2,0]/self.detcell['ohtot'], 'r-')
-            ax1.set_ylabel('c state pop')
-            ax1.set_ylim(bottom=0)
-            ax0.plot(0,0,'r',label='c state pop') # dummy line for legend
-            fig.subplots_adjust(right=0.9)
+        # default plot
+        if subpop is None:
+            subpop = ['blp']
 
-        if self.nlevels == 4:
-            ax1 = ax0.twinx()
-            ax1.plot(self.tbins*1e6,
-                    self.abcpop[:,2,0]/self.detcell['ohtot'], 'g-')
-            ax1.plot(self.tbins*1e6,
-                    self.abcpop[:,3,0]/self.detcell['ohtot'], 'r-')
-            ax1.set_ylabel('c and d state pop')
-            ax1.set_ylim(bottom=0)
-            ax0.plot(0,0,'r',label='d state pop') # dummy line for legend
-            ax0.plot(0,0,'g',label='c state pop') # dummy line for legend
-            fig.subplots_adjust(right=0.9)
+        for plotcode in subpop:
+            if plotcode[0] == 'a' or plotcode[0] == 'b':
+                ax0.plot(self.tbins*1e6, self.popseries(plotcode), label=plotcode)
+                ax1._get_lines.color_cycle.next()
+            elif plotcode[0] == 'c' or plotcode[0] == 'd':
+                ax1.plot(self.tbins*1e6, self.popseries(plotcode), label=plotcode)
+                ax0._get_lines.color_cycle.next()
+            else:
+                raise NameError("improper plotcode ", plotcode)
 
         ax0.set_title(title)
-        ax0.set_ylabel(yl)
-        ax0.legend()
-        if pngout:
-            fig.savefig(pngout)
-        else:
-            plt.show()    
+        ax0.set_ylabel('pi state pops (a or b)')
+        ax1.set_ylabel('sigma state populations (c and/or d)')
 
-    def plotvslaser(self,func,title='plot',yl='y axis',pngout=None):
+        # Collect lines and labels from both axes, as
+        # https://stackoverflow.com/a/10129461
+        lines0, labels0 = ax0.get_legend_handles_labels()
+        lines1, labels1 = ax1.get_legend_handles_labels()
+        ax1.legend(lines0+lines1, labels0+labels1)
+
+        return fig
+
+    def popseries(self, plotcode):
+        '''calculate 1D array describing timeseries of subpopulation.
+        '''
+        # add default if second or third character of plotcode blank
+        if len(plotcode) == 3:
+            pass
+        elif len(plotcode) == 2:
+            plotcode = plotcode + 'p'
+        elif len(plotcode) == 1:
+            plotcode = plotcode + 'lp'
+        else:
+            raise NameError("improper plotcode ", plotcode)
+
+        leveldict = {'a': 0, 'b': 1, 'c': 2, 'd': 3}
+        levelidx = leveldict[plotcode[0]]
+        sublevelabbrevdict = {'s': 'swept',
+                'h': 'lambda_half',
+                'd': 'rot_level',
+                'l': 'full'}
+        # use existing slicedict for sublevel
+        sublevelslice = slicedict[sublevelabbrevdict[plotcode[1]]]
+        # all sublevels used here should be a slice, so num requires .sum(1).
+        # however, just in case sublevel slice is single entry, check ndim of
+        # numraw to see if .sum(1) is necessary.
+        numraw = self.N[:, levelidx, sublevelslice]
+        if numraw.ndim == 1:
+            num = numraw
+        else:
+            num = numraw.sum(1)
+
+        denomabbrev = plotcode[2]
+        if denomabbrev == 'd':
+            denom = self.N[:, levelidx, slicedict['rot_level']].sum(1)
+        elif denomabbrev == 'l':
+            denom = self.N[:, levelidx, :].sum(1)
+        elif denomabbrev == 'p':
+            denom = self.detcell['ohtot']
+        elif denomabbrev == 'a':
+            denom = 1
+        else:
+            raise NameError("improper plotcode ", plotcode)
+
+        popseries = num/denom
+        return popseries
+
+    def vslaserfigure(self,func,title='plot',yl='y axis',pngout=None):
         '''Make arbitrary plot in time with laser sweep as second plot
         
         Parameters
@@ -953,12 +996,10 @@ internal_dict = {'rot_pi':[self.rates.rr,
         ax1.set_title('Position of IR beam')
         ax1.set_xlabel('Time ($\mu$s)')
         ax1.set_ylabel('Relative Frequency (MHz)')
-        if pngout:
-            plt.savefig(pngout)
-        else:
-            plt.show()    
 
-    def plotfeature(self,laslines=True):
+        return fig
+
+    def absfigure(self,laslines=True):
         '''Plot the calculated absorption feature in frequency space
         
         Requires KineticsRun instance with an Abs that makeProfile has been run
@@ -978,9 +1019,9 @@ internal_dict = {'rot_pi':[self.rates.rr,
         ax0.set_ylabel('Relative absorption')
         
         if laslines:
-            ax0.axvline(self.sweep.las_bins[0],ls='--')
-            ax0.axvline(self.sweep.las_bins[-1],ls='--')
-        plt.show()
+            ax0.axvline(self.sweep.las_bins[0]/1e6,ls='--')
+            ax0.axvline(self.sweep.las_bins[-1]/1e6,ls='--')
+        return fig
 
     def savecsv(self, csvout):
         '''save csv of 3-level system populations and time values
@@ -1053,6 +1094,15 @@ def getnested(keys, d):
 # GLOBAL VARS
 levels = {'pi_v0': 0, 'pi_v1': 1, 'sigma_v0': 2, 'sigma_v1': 3}
 
+slicedict = {'rot_level': np.s_[:-1],
+        'rot_other': np.s_[-1],
+        'lambda_half': np.s_[:-2],
+        'lambda_other': np.s_[-2],
+        'swept': np.s_[:-3],
+        'half_lambda': np.s_[:-2],
+        'rot_level': np.s_[:-1],
+        'rot_other': np.s_[-1],
+        'full': np.s_[:]}
 # Form of vibronic_dict:
 # rate constant, 'concentration' it needs to be multiplied by (or `None` if
 # first-order), initial level, final level, initial range (within level), final
@@ -1256,51 +1306,3 @@ def internalrate(yl, ratecon, equildist, ratetype):
     else:
         term.fill(0)
     return term
-
-##############################################################################
-# Simple batch scripts, now deprecated because KineticsRun no longer assumes
-# a bunch of default parameters
-
-# def pressdepen(file):
-#     '''Run solveode over range of pressures.
-
-#     Default solveode run, all output just printed with logger.info.
-
-#     Parameters
-#     ----------
-#     file : str
-#     Path to HITRAN file containing data.
-#     '''
-#     i=1
-#     pressconsidered=(2,10,100,760)
-#     for press in pressconsidered:
-#         logger.info('--------------------')
-#         logger.info('KineticsRun {:} OF {}'.format(i,
-#             np.size(pressconsidered)))
-#         logger.info('--------------------')
-#         k=KineticsRun(press=press,stype='sin')
-#         k.solveode(file)
-#         # k.plotpops()
-#         #k.abfeat=Abs()
-#         #k.abfeat.makeProfile(press=press)
-#         #k.sweep.matchAbsSize(k.abfeat)
-#         i+=1
-
-# def sweepdepen(file):
-#     '''Run solveode over range of sweep widths.
-
-#     Default solveode run, all output just printed with logger.info.
-
-#     Parameters
-#     ----------
-#     file : str
-#     Path to HITRAN file containing data.
-#     '''
-#     for factor in (0.01, 0.1, 0.5, 0.9):
-#         k=KineticsRun(stype='sin')
-#         k.sweep.factor=factor
-#         # k.abfeat=Abs()
-#         # k.abfeat.makeProfile()
-#         # k.sweep.matchAbsSize(k.abfeat)
-#         k.solveode(file)
-#         # k.plotpops()
