@@ -1,7 +1,6 @@
 *.swp
 *.pyc
 *.un~
-*.par
 build/
 src/popmodel.egg-info/
 dist/
@@ -9,3 +8,4 @@ dist/
 *.npz
 popmodel.egg-info/
 *.csv
+raw_hitran/
