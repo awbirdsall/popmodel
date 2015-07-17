@@ -4,8 +4,8 @@ Created on Tue May 27 16:10:34 2014
 
 @author: abirdsall
 """
-import atmcalcs as atm
-import ohcalcs as oh
+from . import atmcalcs as atm
+from . import ohcalcs as oh
 
 import numpy as np
 import logging
@@ -36,28 +36,28 @@ def importhitran(file, columns=None):
     documentation for explanation of each column.
     '''
     data = np.genfromtxt(file,
-                        delimiter = (2, 1, 12, 10, 10, 5, 5, 10, 4, 8, 15, 15,
-                                     15, 15, 6, 12, 1, 7, 7),
-                        dtype=[('molec_id', '<i4'),
-                        ('isotop', '<i4'),
-                        ('wnum_ab', '<f8'),
-                        ('S', '<f8'), 
-                        ('A', '<f8'), 
-                        ('g_air', '<f8'),
-                        ('g_self', '<f8'),
-                        ('E_low', '<f8'),
-                        ('n_air', '<f8'),
-                        ('delta_air', '<f8'),
-                        ('ugq', 'S15'),
-                        ('lgq', 'S15'),
-                        ('ulq', 'S15'),
-                        ('llq', 'S15'),
-                        ('ierr', 'S6'),
-                        ('iref', 'S12'),
-                        ('flag', 'S1'),
-                        ('g_up', 'f8'),
-                        ('g_low', 'f8')],
-                        usecols = columns)
+                         delimiter = (2, 1, 12, 10, 10, 5, 5, 10, 4, 8, 15, 15,
+                                      15, 15, 6, 12, 1, 7, 7),
+                         dtype=[('molec_id', '<i4'),
+                         ('isotop', '<i4'),
+                         ('wnum_ab', '<f8'),
+                         ('S', '<f8'), 
+                         ('A', '<f8'), 
+                         ('g_air', '<f8'),
+                         ('g_self', '<f8'),
+                         ('E_low', '<f8'),
+                         ('n_air', '<f8'),
+                         ('delta_air', '<f8'),
+                         ('ugq', 'S15'),
+                         ('lgq', 'S15'),
+                         ('ulq', 'S15'),
+                         ('llq', 'S15'),
+                         ('ierr', 'S6'),
+                         ('iref', 'S12'),
+                         ('flag', 'S1'),
+                         ('g_up', 'f8'),
+                         ('g_low', 'f8')],
+                         usecols = columns)
                         
     return data
 

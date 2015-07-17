@@ -1,21 +1,16 @@
 '''simulate absorption cross section spectrum made up of one or more lines'''
 # modules within package
-import ohcalcs as oh
-import atmcalcs as atm
-import loadhitran as loadhitran
+from . import ohcalcs as oh
 
 # other modules
 import numpy as np
 import scipy.special
 import pandas as pd
-import matplotlib.pyplot as plt
 from scipy.constants import k
-from scipy.constants import c, N_A, pi
-from math import floor
+from scipy.constants import c, pi
 import logging
-import ConfigParser
-logging.basicConfig(level=logging.INFO)
-import csv
+
+logger = logging.getLogger('popmodel.simspec')
 
 def dornvoigt(wc, wd, wnum):
     '''use Eq 13 in Dorn et al. to calculate voigt profile
@@ -67,7 +62,8 @@ def dornvoigt(wc, wd, wnum):
     voigt_norm = voigt*norm_factor
     areaplotted = voigt_norm.sum() * xstep
     if areaplotted < 0.9:
-        print 'Warning: profile contains <90% of total area:', areaplotted
+        logger.warning('Warning: profile contains <90% of total area: {}'
+                       .format(areaplotted))
     return xarr,voigt_norm
 
 def voigt(xarr,amp,xcen,wc,wd,normalized):

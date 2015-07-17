@@ -2,7 +2,7 @@
 ## Updated May 2014
 ## Adam Birdsall
 
-from scipy.constants import c, N_A, pi, gas_constant, atm, h, torr
+from scipy.constants import c, N_A, gas_constant, atm, torr
 
 ## Constants derived from scipy.constants:
 
@@ -15,18 +15,17 @@ torr_to_atm = torr/atm    # one torr in atm
 ## Conversions
 
 def wavenum_to_nm(wavenum):
-	'''Converts input from wavenumber to nm'''
-	nm = c / (wavenum * wavenum_to_Hz) * 10**9
-	return nm
+    '''Converts input from wavenumber to nm'''
+    nm = c / (wavenum * wavenum_to_Hz) * 10**9
+    return nm
 
 def nm_to_wavenum(nm):
-	'''Converts input from nm to wavenumber'''
-	wavenum = c / (nm * wavenum_to_Hz) * 10**9
-	return wavenum
+    '''Converts input from nm to wavenumber'''
+    wavenum = c / (nm * wavenum_to_Hz) * 10**9
+    return wavenum
 
 def mix_to_numdens(mix, press=760, temp=273):
-	'''
-	Converts input from mixing ratio to number density.
+    '''Converts input from mixing ratio to number density.
 
 	Parameters
 	----------
@@ -42,12 +41,13 @@ def mix_to_numdens(mix, press=760, temp=273):
 	numdens : float
 	Number density in molecules cm^-3
 	'''
-	n_air = N_A * press * torr_to_atm / (r_gas * 1000 * temp)
-	numdens = n_air * mix
-	return numdens
+    n_air = N_A * press * torr_to_atm / (r_gas * 1000 * temp)
+    numdens = n_air * mix
+    return numdens
 
 def press_to_numdens(press=760, temp=273):
-    '''input pressure in torr and temp in K; output num density in molecules cm^-3'''
+    '''Convert pressure (torr) and temp (K) to num density (molec cm^-3)
+    '''
     numdens = (press * torr_to_atm) / (r_gas * temp) * (N_A / 1000)
     return numdens
 

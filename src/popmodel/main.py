@@ -19,11 +19,11 @@ Capabilities:
 """
 
 # modules within package
-import ohcalcs as oh
-import atmcalcs as atm
-import loadhitran as loadhitran
-import sweep as sw
-import absprofile as ap
+from . import ohcalcs as oh
+from . import atmcalcs as atm
+from . import loadhitran as loadhitran
+from . import sweep as sw
+from . import absprofile as ap
 
 # other modules
 import numpy as np
@@ -76,7 +76,7 @@ def importyaml(parfile):
     return par
 
 def automate(hitfile,parameters,logfile=None,csvout=None,image=None,
-        verbose=False):
+             verbose=False):
     '''Accept command-line-mode-style inputs and provide requested output(s).
     '''
     if verbose:
@@ -191,7 +191,7 @@ class KineticsRun(object):
         lineidx = np.where(hpar['label']==label)[0][0]
         self.hline = hpar[lineidx]
         self.logger.info('chooseline: using {} line at {:.4g} cm^-1'
-                    .format(self.hline['label'], self.hline['wnum_ab']))
+                         .format(self.hline['label'], self.hline['wnum_ab']))
 
         # extract rotation fraction for a b and c
         # figure out which 'F1' or 'F2' series that a and b state are:
@@ -217,7 +217,7 @@ class KineticsRun(object):
         '''
         # Set up IR b<--a absorption profile
         self.abfeat = ap.AbsProfile(wnum=self.hline['wnum_ab'])
-        self.abfeat.makeProfile(press=self.detcell['press'],
+        self.abfeat.makeprofile(press=self.detcell['press'],
                                 T=self.detcell['temp'],    
                                 g_air=self.hline['g_air'])
 
@@ -244,7 +244,7 @@ class KineticsRun(object):
         # define time range
         if duringuvpulse:
             timerange = (self.uvlaser['delay'], (self.uvlaser['delay']
-                    + self.uvlaser['pulse']))
+                                                 + self.uvlaser['pulse']))
         if timerange is not None:
             dt = timerange[1]-timerange[0]
             start = np.searchsorted(self.tbins, timerange[0])

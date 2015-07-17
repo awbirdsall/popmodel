@@ -11,7 +11,7 @@
 # Tsuji et al, Bull Chem Soc Jpn, 73, 2695-2702 (2000)
 # van de Meerakker et al, Phys Rev Lett, 95, 013003 (2005)
 
-import atmcalcs as atm
+from . import atmcalcs as atm
 
 import math as m
 import numpy as np
