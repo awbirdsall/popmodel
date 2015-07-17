@@ -882,17 +882,23 @@ internal_dict = {'rot_pi':[self.rates.rr,
         '''
         
         fig, (ax0) = plt.subplots()
-        ax1 = ax0.twinx()
-        fig.subplots_adjust(right=0.8)
 
         # default plot
         if subpop is None:
             subpop = ['blp']
 
+        # make twinx if any 'c' or 'd' will be plotted
+        maketwinx = any([(s[0] == 'c') or (s[0] == 'd') for s in subpop])
+        if maketwinx:
+            ax1 = ax0.twinx()
+            fig.subplots_adjust(right=0.8)
+            ax1.set_ylabel('sigma state populations (c and/or d)')
+
         for plotcode in subpop:
             if plotcode[0] == 'a' or plotcode[0] == 'b':
                 ax0.plot(self.tbins*1e6, self.popseries(plotcode), label=plotcode)
-                ax1._get_lines.color_cycle.next()
+                if maketwinx:
+                    ax1._get_lines.color_cycle.next()
             elif plotcode[0] == 'c' or plotcode[0] == 'd':
                 ax1.plot(self.tbins*1e6, self.popseries(plotcode), label=plotcode)
                 ax0._get_lines.color_cycle.next()
@@ -900,14 +906,17 @@ internal_dict = {'rot_pi':[self.rates.rr,
                 raise NameError("improper plotcode ", plotcode)
 
         ax0.set_title(title)
+        ax0.set_xlabel('Time ($\mu$s)')
         ax0.set_ylabel('pi state pops (a or b)')
-        ax1.set_ylabel('sigma state populations (c and/or d)')
 
-        # Collect lines and labels from both axes, as
-        # https://stackoverflow.com/a/10129461
-        lines0, labels0 = ax0.get_legend_handles_labels()
-        lines1, labels1 = ax1.get_legend_handles_labels()
-        ax1.legend(lines0+lines1, labels0+labels1)
+        # gather up lines and labels from both axes for unified legend
+        lines_list = [ax.get_legend_handles_labels()[0] for ax in fig.get_axes()]
+        lines = [items for sublists in lines_list for items in sublists]
+        labels_list = [ax.get_legend_handles_labels()[1] for ax in fig.get_axes()]
+        labels = [items for sublists in labels_list for items in sublists]
+
+        topax = fig.get_axes()[-1]
+        topax.legend(lines, labels)
 
         return fig
 
