@@ -5,10 +5,10 @@ This represents a slow accumulation of calculations I've needed to do for a rese
 
 ## Capabilities
 - Extract absorption feature information (upper/lower states, energy gap, degeneracies, Einstein coefficients, ...) from a HITRAN-type file using `loadhitran`. (Vibrational lines of OH only, with limited parsing of H2O.)
-- Calculate shape of absorption feature from Doppler and pressure broadening (`main.Abs` object).
-- Automatically define fast modulation of narrow laser linewidth over broadened absorption feature (`main.Sweep` object).
+- Calculate shape of absorption feature from Doppler and pressure broadening (`absprofile.AbsProfile` object).
+- Automatically define fast modulation of narrow laser linewidth over broadened absorption feature (`sweep.Sweep` object).
 - Solve system of ODEs to calculate population in each state over time. Processes included in the ODEs are stimulated absorption/emission, spontaneous emission, and lambda doublet/rotational/vibrational/electronic relaxation (`main.KineticsRun` object).
-- Plot populations or laser frequency over time; plot vibrational excitation absorption feature (`main.KineticsRun.plot[...]()` functions).
+- Create `matplotlib` figures of populations or laser frequency over time; create figure of infrared absorption feature (`main.KineticsRun.[...]figure()` functions).
 - convenience unit conversion functions related to atmospheric science (`atmcalcs`)
 - constants and functions related to OH spectroscopy (`ohcalcs`)
 
@@ -34,7 +34,7 @@ yamlpath = resource_filename('popmodel','data/parameters_template.yaml')
 ## Example usage
 
 ### Command line
-Installation using `pip` creates command-line command `popmodel`. Format of command line arguments: `HITFILE PARAMETERS [-l] LOGFILE [-c] CSVOUTPUT [-i] IMAGE`
+Installation using `pip` creates command-line command `popmodel`. Format of command line arguments: `HITFILE PARAMETERS [-l] LOGFILE [-c] CSVOUTPUT [-i] IMAGE [-v]`
 
 For example:
 
@@ -48,7 +48,8 @@ Basic usage:
 
 ~~~
 import popmodel as pm
-pm.stream_logging_info() # optional, print logging.INFO to screen
+pm.add_streamhandler() # optional, print logging.INFO to screen
+pm.add_filehandler("path/to.log") # optional, write logging.INFO to file
 par = pm.importyaml("path_to/yaml/parameters.yaml")
 hpar = pm.loadhitran.processhitran("path_to/13_hit12.par")
 k = pm.KineticsRun(hpar,**par)

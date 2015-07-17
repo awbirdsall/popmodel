@@ -22,38 +22,41 @@ Capabilities:
 import ohcalcs as oh
 import atmcalcs as atm
 import loadhitran as loadhitran
+import sweep as sw
+import absprofile as ap
 
 # other modules
 import numpy as np
-import scipy.special
 import matplotlib.pyplot as plt
-from scipy.constants import k as kb
-from scipy.constants import c, N_A, pi
 from scipy.integrate import ode
 from math import floor
 import logging
-import argparse
 import yaml
+# Prefer CLoader to load yaml, see https://stackoverflow.com/q/18404441
+# But, probably makes absolutely no difference for small yaml file used here.
 try:
     from yaml import CLoader as Loader
 except ImportError:
-    from yaml import Loader # a lot slower sez https://stackoverflow.com/questions/18404441/why-is-pyyaml-spending-so-much-time-in-just-parsing-a-yaml-file
+    from yaml import Loader 
+
 ##############################################################################
-# set up logging, follow python logging cookbook
-# need to initialize here AND in each class/submodule
+# Set up logging, following python logging cookbook.
+# Need to getLogger() here AND in each class/submodule.
+# Any logger in form 'popmodel.prefix' will inherit behavior from this logger.
 logger = logging.getLogger('popmodel')
 logger.setLevel(logging.WARNING)
-def stream_logging_info():
+def add_streamhandler():
+    '''Add StreamHandler `ch` to logger.
+    '''
     logger.setLevel(logging.INFO)
-    # console handler always runs (optional logfile through init_logfile())
     ch = logging.StreamHandler()
     ch.setLevel(logging.INFO)
     formatter = logging.Formatter('%(levelname)s:%(name)s:%(message)s')
     ch.setFormatter(formatter)
     logger.addHandler(ch)
 
-def init_logfile(logfile):
-    '''set up FileHandler within logging to write to output file
+def add_filehandler(logfile):
+    '''Add FileHandler `fh` to logger, with output to `logfile`.
     '''
     fh = logging.FileHandler(logfile)
     fh.setLevel(logging.INFO)
@@ -74,13 +77,13 @@ def importyaml(parfile):
 
 def automate(hitfile,parameters,logfile=None,csvout=None,image=None,
         verbose=False):
-    '''command-line-mode-style inputs to integration output
+    '''Accept command-line-mode-style inputs and provide requested output(s).
     '''
     if verbose:
-        stream_logging_info()
+        add_streamhandler()
     if logfile:
-        init_logfile(logfile)
-    # record to log each output filename
+        add_filehandler(logfile)
+    # log each output filename
     argdict = {"log file":logfile,"output csv":csvout,
             "output png image":image}
     for (k,v) in argdict.iteritems():
@@ -97,212 +100,18 @@ def automate(hitfile,parameters,logfile=None,csvout=None,image=None,
         k.popsfigure().savefig(image)
 
 ##############################################################################
-class Sweep(object):
-    '''
-    Represent sweeping parameters of the laser. Before performing solveode on
-    a KineticsRun, need to alignBins of Sweep: adjust Sweep parameters to
-    match Abs and align bins of Abs and Sweep. runmodel does this.
-    '''
-    def __init__(self,
-        stype='sin',
-        tsweep=1.e-4,
-        width=500.e6,
-        binwidth=1.e6,
-        factor=.1,
-        keepTsweep=False,
-        keepwidth=False):
-
-        self.logger = logging.getLogger('popmodel.sweep')
-
-        # parameters that don't change after initiated
-        self.ircen=0 # set center of swept ir
-        self.stype=stype # allowed: 'saw' or 'sin'. Anything else forces laser
-        # to just sit at middle bin. Have used stype='None' for some calcs,
-        # didn't bother to turn off alignBins -- some meaningless variables.
-        self.binwidth=binwidth # Hz, have been using 1 MHz
-
-        # initial sweep width and time -- alignBins can later reduce
-        self.width=width # Hz
-        self.tsweep=tsweep # s
-        # max is 500 MHz for OPO cavity sweep, 100 GHz for seed sweep
-
-        # make initial las_bins array
-        self.makebins()
-
-        # absorption cutoff relative to peak, used to reduce sweep width
-        self.factor=factor
-
-        # Whether alignbins readjusts sweep time or width
-        self.keepTsweep=keepTsweep
-        self.keepwidth=keepwidth
-
-    def makebins(self):
-        '''
-        Used in self.__init__ to make initial las_bins array.
-        '''
-        self.las_bins = np.arange(self.ircen-self.width/2,
-            self.ircen+self.width/2+self.binwidth,self.binwidth)
-
-    def alignBins(self, abfeat):
-        '''
-        Adjust width, tsweep and las_bins of Sweep to match given abfeat Abs
-        object.
-
-        Parameters
-        ----------
-        abfeat : popmodel.application.Abs
-        Absorption feature Sweep is aligned to. Must have abs_freq and pop
-        (i.e., from Abs.makeProfile()).
-        '''
-        if self.keepwidth==False:
-            # use absorption feature and cutoff factor to determine sweep size
-            threshold = self.factor * np.max(abfeat.pop)
-            abovecutoff = np.where(abfeat.pop > threshold)
-            # start and end are indices defining the range of abfeat.abs_freq
-            # to sweep over. abswidth is the size of the frequency range from
-            # start to end.
-
-            # use if...else to handle nonempty/empty abovecutoff result
-            if np.size(abovecutoff) > 0:
-                start =  abovecutoff[0][0]
-                end = abovecutoff[0][-1]
-                abswidth = abfeat.abs_freq[end]-abfeat.abs_freq[start]
-            else:
-                start = np.argmax(abfeat.pop)
-                end = start + 1
-                abswidth = self.binwidth
-
-            # Default self.width defined in __init__ represents a physical cap
-            # to the allowed dithering range. Only reduce self.width if the
-            # frequency width obtained using the cutoff is less than that:
-            if abswidth > self.width: # keep self.width maximized
-                logger.info('alignBins: IR sweep width maximized: {:.2g} MHz'
-                    .format(self.width/1e6))
-                abmid = floor(np.size(abfeat.abs_freq)/2.)
-                irfw=self.width/self.binwidth
-                self.las_bins=abfeat.abs_freq[abmid-irfw/2:abmid+irfw/2]
-                abfeat.intpop=abfeat.pop[abmid-irfw/2:abmid+irfw/2]
-            else: # reduce self.width to abswidth
-                fullwidth=self.width
-                if self.keepTsweep==False: # scale tsweep by width reduction
-                    self.tsweep=self.tsweep*abswidth/fullwidth 
-                    logger.info('alignBins: IR sweep time reduced to '+
-                        '{:.2g} s'.format(self.tsweep))
-                else:
-                    logger.info('alignBins: IR sweep time maintained at ,'
-                        '{:.2g} s'.format(self.tsweep))
-                self.width=abswidth
-                self.las_bins = abfeat.abs_freq[start:end]
-                abfeat.intpop=abfeat.pop[start:end] # integrated pop
-                logger.info('alignBins: IR sweep width reduced to {:.2g} MHz'
-                    .format(abswidth/1e6))
-
-        else:
-            # Keep initial width, but still align bins to abfeat.abs_freq
-            logger.info('alignBins: maintaining manual width and tsweep')
-            start = np.where(abfeat.abs_freq>=self.las_bins[0])[0][0]
-            end = np.where(abfeat.abs_freq<=self.las_bins[-1])[0][-1]
-            self.las_bins=abfeat.abs_freq[start:end]
-            self.width=self.las_bins[-1]-self.las_bins[0]+self.binwidth
-            abfeat.intpop=abfeat.pop[start:end] # integrated pop
-            logger.info('alignBins: sweep width ',
-                '{:.2g} MHz, sweep time {:.2g} s'.format(self.width/1e6,
-                    self.tsweep))
-        # report how much of the b<--a feature is being swept over:
-        self.part_swept=np.sum(abfeat.intpop)
-        logger.info('alignBins: region swept by IR beam represents '+
-            '{:.1%} of feature\'s total population'.format(self.part_swept))
-
-class Abs(object):
-    '''absorbance line profile, initially defined in __init__ by a center 
-    wavenumber `wnum` and a `binwidth`. Calling self.makeProfile then generates
-    two 1D arrays:
-
-    abs_freq : bins of frequencies (Hz)
-    pop : relative population absorbing in each frequency bin
-
-    pop is generated from abs_freq and the Voigt profile maker ohcalcs.voigt,
-    which requires parameters that are passed through as makeProfile arguments
-    (default are static parameters in ohcalcs). The formation of the two arrays
-    is iterative, widening the abs_freq range by 50% until the edges of the pop
-    array have less than 1% of the center.
-    '''
-    def __init__(self,wnum,binwidth=1.e6):
-        self.logger = logging.getLogger('popmodel.Abs')
-        self.wnum=wnum # cm^-1
-        self.freq=wnum*c*100 # Hz
-        self.binwidth=binwidth # Hz
-
-    def __str__(self):
-        return 'Absorbance feature centered at '+str(self.wnum)+' cm^-1'
-      
-    def makeProfile(self,abswidth=1000.e6,press=oh.op_press,T=oh.temp,
-        g_air=oh.g_air,mass=oh.mass):
-        '''
-        Use oh.voigt func to create IR profile as self.abs_freq and self.pop.
-    
-        Parameters:
-        -----------
-        abswidth : float
-        Minimum width of profile, Hz. Starting value that then expands if this
-        does not capture 'enough' of the profile (defined as <1% of peak height
-        at edges).
-
-        press : float
-        Operating pressure, torr. Defaults to ohcalcs value
-    
-        T : float
-        Temperature. Defaults to ohcalcs value
-
-        g_air : float
-        Air-broadening coefficient provided in HITRAN files, cm^-1 atm^-1.
-        Defaults to ohcalcs value.
-
-        mass : float
-        Mass of molecule of interest, kg. Defaults to ohcalcs value
-        '''
-        sigma=(kb*T / (mass*c**2))**(0.5)*self.freq # Gaussian std dev
-    
-        gamma=(g_air*c*100) * press/760. # Lorentzian parameter
-        # air-broadened HWHM at 296K, HITRAN (converted from cm^-1 atm^-1)
-        # More correctly, correct for temperature -- see Dorn et al. Eq 17
-
-        # Make abs_freq profile, checking pop at edge <1% of peak
-        enoughWidth=False 
-        while enoughWidth==False:
-            abs_freq = np.arange(-abswidth/2,
-                abswidth/2+self.binwidth,
-                self.binwidth)
-            raw_pop=oh.voigt(abs_freq,1,0,sigma,gamma,True)
-            norm_factor = 1/np.sum(raw_pop)
-            pop=raw_pop * norm_factor # makes sum of pops = 1.
-            if pop[0]>=0.01*np.max(pop):
-                abswidth=abswidth*1.5
-            else:
-                enoughWidth=True
-        self.abs_freq = abs_freq
-        self.pop = pop
-        startfwhm=np.where(pop>=np.max(pop)*0.5)[0][0]
-        endfwhm=np.where(pop>=np.max(pop)*0.5)[0][-1]
-        fwhm=abs_freq[endfwhm]-abs_freq[startfwhm]
-        logger.info('makeProfile: made abs profile')
-        logger.info('makeProfile: abs profile has FWHM = {:.2g} MHz'
-            .format(fwhm/1e6))
-        logger.info('makeProfile: total width of stored array = {:.2g} MHz'
-            .format(abswidth/1e6))
-
-        # return np.array([abs_freq, pop])
 
 class KineticsRun(object):
     '''Full model of OH population kinetics: laser, feature and populations.
     
     If IR laser is swept, has single instance of Sweep, describing laser
-    dithering, and of Abs, describing absorption feature. Sweep is made in
-    __init__, while Abs is made after the HITRAN file is imported and the
-    absorption feature selected.
+    dithering, and of AbsProfile, describing absorption feature. Sweep is made
+    in __init__, while AbsProfile is made after the HITRAN file is imported and
+    the absorption feature selected.
     '''
-    def __init__(self,hpar, irlaser,sweep,uvlaser,odepar,irline,uvline,detcell,rates):
-        '''Initizalize KineticsRuns using dictionaries of input parameters and
+    def __init__(self, hpar, irlaser, sweep, uvlaser, odepar, irline, uvline,
+                 detcell, rates):
+        '''Initizalize KineticsRun using dictionaries of input parameters and
         processed HITRAN file.
         
         The input parameters can be gathered up in a yaml file (in format of
@@ -311,18 +120,20 @@ class KineticsRun(object):
         self.logger = logging.getLogger('popmodel.KineticsRun')
 
         self.detcell = detcell
-        self.detcell['ohtot'] = atm.press_to_numdens(detcell['press'],
-                detcell['temp'])*detcell['xoh']
         # quencher conc
         self.detcell['Q'] = atm.press_to_numdens(self.detcell['press'],
-                self.detcell['temp'])
+                                                 self.detcell['temp'])
+        self.detcell['ohtot'] = self.detcell['Q']*self.detcell['xoh']
+
         self.irlaser = irlaser
         self.uvlaser = uvlaser
         self.odepar = odepar
         self.irline = irline
         self.uvline = uvline
 
-        self.levelsidx= levels
+        # Build dictionary of level names, based on instance-independent names
+        # in `levels`
+        self.levelsidx = levels
 
         if self.odepar['withoutUV']:
             self.nlevels = 2
@@ -340,13 +151,13 @@ class KineticsRun(object):
         # Sweep object
         if sweep['dosweep']:
             self.dosweep=True
-            self.sweep=Sweep(stype=sweep['stype'],
-                            tsweep=sweep['tsweep'],
-                            width=sweep['width'],
-                            binwidth=sweep['binwidth'],
-                            factor=sweep['factor'],
-                            keepTsweep=sweep['keepTsweep'],
-                            keepwidth=sweep['keepwidth'])
+            self.sweep=sw.Sweep(stype=sweep['stype'],
+                                tsweep=sweep['tsweep'],
+                                width=sweep['width'],
+                                binwidth=sweep['binwidth'],
+                                factor=sweep['factor'],
+                                keepTsweep=sweep['keepTsweep'],
+                                keepwidth=sweep['keepwidth'])
             self.sweep.avg_step_in_bin = sweep['avg_step_in_bin']
             # Average number of integration steps to spend in each frequency
             # bin as laser sweeps over frequencies. Default of 20 is
@@ -364,14 +175,14 @@ class KineticsRun(object):
         # overwrite following subdictionaries for appropriate format for dN:
         # overall vibrational quenching rate from b:
         self.rates['kqb']['tot'] = oh.kqavg(rates['kqb']['n2'],
-                rates['kqb']['o2'],
-                rates['kqb']['h2o'],
-                detcell['xh2o'])
+                                            rates['kqb']['o2'],
+                                            rates['kqb']['h2o'],
+                                            detcell['xh2o'])
         # vibrational quenching rate from c:
         self.rates['kqc']['tot'] = oh.kqavg(rates['kqc']['n2'],
-                rates['kqc']['o2'],
-                rates['kqc']['h2o'],
-                self.detcell['xh2o'])
+                                            rates['kqc']['o2'],
+                                            rates['kqc']['h2o'],
+                                            self.detcell['xh2o'])
         self.chooseline(hpar,irline)
 
     def chooseline(self,hpar,label):
@@ -379,8 +190,8 @@ class KineticsRun(object):
         '''
         lineidx = np.where(hpar['label']==label)[0][0]
         self.hline = hpar[lineidx]
-        logger.info('chooseline: using {} line at {:.4g} cm^-1'
-            .format(self.hline['label'], self.hline['wnum_ab']))
+        self.logger.info('chooseline: using {} line at {:.4g} cm^-1'
+                    .format(self.hline['label'], self.hline['wnum_ab']))
 
         # extract rotation fraction for a b and c
         # figure out which 'F1' or 'F2' series that a and b state are:
@@ -405,7 +216,7 @@ class KineticsRun(object):
         parameters.
         '''
         # Set up IR b<--a absorption profile
-        self.abfeat = Abs(wnum=self.hline['wnum_ab'])
+        self.abfeat = ap.AbsProfile(wnum=self.hline['wnum_ab'])
         self.abfeat.makeProfile(press=self.detcell['press'],
                                 T=self.detcell['temp'],    
                                 g_air=self.hline['g_air'])
@@ -525,14 +336,14 @@ class KineticsRun(object):
         other rotational levels within same vibrational level.
         '''
 
-        logger.info('solveode: integrating at {} torr, {} K, OH in cell, '
+        self.logger.info('solveode: integrating at {} torr, {} K, OH in cell, '
             '{:.2g} cm^-3'.format(self.detcell['press'],self.detcell['temp'],
                 self.detcell['ohtot']))
         tl = self.odepar['inttime'] # total int time
 
         # set-up steps only required if IR laser is swept:
         if self.dosweep:
-            logger.info('solveode: sweep mode: {}'.format(self.sweep.stype))
+            self.logger.info('solveode: sweep mode: {}'.format(self.sweep.stype))
             self.makeAbs()
             
             # Align bins for IR laser and absorbance features for integration
@@ -560,7 +371,7 @@ class KineticsRun(object):
                     /tindexsweep)
             elif stype=='sin':
                 self.sweepfunc = np.round((num_las_bins-1)/2.\
-                    *np.sin(2*pi/tindexsweep*tindex)+(num_las_bins-1)/2.)
+                    *np.sin(2*np.pi/tindexsweep*tindex)+(num_las_bins-1)/2.)
             else:
                 self.sweepfunc= np.empty(np.size(tindex))
                 self.sweepfunc.fill(np.floor(num_las_bins/2))
@@ -572,7 +383,7 @@ class KineticsRun(object):
             tindex=np.arange(t_steps)
             self.sweepfunc= np.zeros(np.size(tindex))
 
-        logger.info('solveode: integrating {:.2g} s, '.format(tl)+
+        self.logger.info('solveode: integrating {:.2g} s, '.format(tl)+
             'step size {:.2g} s'.format(dt))
 
         # set up ODE
@@ -609,17 +420,17 @@ class KineticsRun(object):
         r.set_integrator('lsoda', with_jacobian=False,)
         r.set_initial_value(list(self.N0.ravel()), 0)
 
-        logger.info('  %  |   time   |   bin   ')
-        logger.info('--------------------------')
+        self.logger.info('  %  |   time   |   bin   ')
+        self.logger.info('--------------------------')
 
         # Solve ODE
         self.time_progress=0 # laspos looks at this to choose sweepfunc index.
-        old_complete=0 # tracks integration progress for logger
+        old_complete=0 # tracks integration progress for self.logger
         while r.successful() and r.t < tl-dt:
             # display progress
             complete = r.t/tl
             if floor(complete*100/10)!=floor(old_complete*100/10):
-                logger.info(' {0:>3.0%} | {1:8.2g} | {2:7.0f} '
+                self.logger.info(' {0:>3.0%} | {1:8.2g} | {2:7.0f} '
                     .format(complete,r.t,self.sweepfunc[self.time_progress]))
             old_complete = complete
             
@@ -638,7 +449,7 @@ class KineticsRun(object):
 
             self.time_progress+=1
 
-        logger.info('solveode: done with integration')
+        self.logger.info('solveode: done with integration')
 
     def laspos(self):
         '''Determine position of IR laser at current integration time.
@@ -655,7 +466,7 @@ class KineticsRun(object):
         '''
         voigt_pos = self.sweepfunc[self.time_progress]
         if voigt_pos+1 > self.sweep.las_bins.size:
-            logger.warning('laspos: voigt_pos out of range')
+            self.logger.warning('laspos: voigt_pos out of range')
         return voigt_pos
 
     def dN(self, t, y):
@@ -983,7 +794,7 @@ internal_dict = {'rot_pi':[self.rates.rr,
         filename to save PNG output. Displays plot if not given.
         '''
         if hasattr(self,'abcpop')==False and hasattr(self,'N')==False:
-            logger.warning('need to run solveode first!')
+            self.logger.warning('need to run solveode first!')
             return
         elif hasattr(self,'abcpop')==False and self.odepar['keepN']:
             self.abcpop = np.empty((np.size(self.tbins),self.nlevels,2))
@@ -1100,100 +911,101 @@ def getnested(keys, d):
         keys = [keys]
     return reduce(dict.__getitem__, keys, d)
 
+###############################################################################
 # GLOBAL VARS
 levels = {'pi_v0': 0, 'pi_v1': 1, 'sigma_v0': 2, 'sigma_v1': 3}
 
 slicedict = {'rot_level': np.s_[:-1],
-        'rot_other': np.s_[-1],
-        'lambda_half': np.s_[:-2],
-        'lambda_other': np.s_[-2],
-        'swept': np.s_[:-3],
-        'half_lambda': np.s_[:-2],
-        'rot_level': np.s_[:-1],
-        'rot_other': np.s_[-1],
-        'full': np.s_[:]}
+             'rot_other': np.s_[-1],
+             'lambda_half': np.s_[:-2],
+             'lambda_other': np.s_[-2],
+             'swept': np.s_[:-3],
+             'half_lambda': np.s_[:-2],
+             'rot_level': np.s_[:-1],
+             'rot_other': np.s_[-1],
+             'full': np.s_[:]}
 # Form of vibronic_dict:
 # rate constant, 'concentration' it needs to be multiplied by (or `None` if
 # first-order), initial level, final level, initial range (within level), final
 # range.
 vibronic_dict = {'absorb_ir':['Bba',
-                             'ir_laser',
-                             'pi_v0',
-                             'pi_v1',
-                             'las_bin',
-                             'las_bin'],
-                'absorb_uv':['Bcb',
-                             'uv_laser',
-                             'uv_lower',
-                             'uv_upper',
-                             'half_lambda',
-                             'half_lambda'],
-                'stim_emit_ir':['Bba',
-                                'ir_laser',
-                                'pi_v1',
-                                'pi_v0',
-                                'las_bin',
-                                'las_bin'],
-                'stim_emit_uv':['Bcb',
-                                'uv_laser',
-                                'uv_upper',
-                                'uv_lower',
-                                'half_lambda',
-                                'half_lambda'],
+                              'ir_laser',
+                              'pi_v0',
+                              'pi_v1',
+                              'las_bin',
+                              'las_bin'],
+                 'absorb_uv':['Bcb',
+                              'uv_laser',
+                              'uv_lower',
+                              'uv_upper',
+                              'half_lambda',
+                              'half_lambda'],
+                 'stim_emit_ir':['Bba',
+                                 'ir_laser',
+                                 'pi_v1',
+                                 'pi_v0',
+                                 'las_bin',
+                                 'las_bin'],
+                 'stim_emit_uv':['Bcb',
+                                 'uv_laser',
+                                 'uv_upper',
+                                 'uv_lower',
+                                 'half_lambda',
+                                 'half_lambda'],
                 # 'spont_emit_p1p0':['Aba',
                 #                  None,
                 #                  'pi_v1',
                 #                  'pi_v0',
                 #                  'full',
                 #                  'full'],
-                'vib_quench_p1p0':[['kqb','tot'],
-                                 'quencher',
-                                 'pi_v1',
-                                 'pi_v0',
-                                 'full',
-                                 'full'],
-                'elec_quench_s0p0':[['kqc','tot'],
+                 'vib_quench_p1p0':[['kqb','tot'],
                                     'quencher',
+                                    'pi_v1',
+                                    'pi_v0',
+                                    'full',
+                                    'full'],
+                 'elec_quench_s0p0':[['kqc','tot'],
+                                     'quencher',
+                                     'sigma_v0',
+                                     'pi_v0',
+                                     'full',
+                                     'full'],
+                 'elec_quench_s1p0':[['kqc','tot'],
+                                     'quencher',
+                                     'sigma_v1',
+                                     'pi_v0',
+                                     'full',
+                                     'full'],
+                 'spont_emit_s0p0':['Aca',
+                                    None,
                                     'sigma_v0',
                                     'pi_v0',
                                     'full',
                                     'full'],
-                'elec_quench_s1p0':[['kqc','tot'],
-                                    'quencher',
+                 'spont_emit_s0p1':['Acb',
+                                    None,
+                                    'sigma_v0',
+                                    'pi_v1',
+                                    'full',
+                                    'full'],
+                 'spont_emit_s1p0':['Ada',
+                                    None,
                                     'sigma_v1',
                                     'pi_v0',
                                     'full',
                                     'full'],
-                'spont_emit_s0p0':['Aca',
-                                 None,
-                                 'sigma_v0',
-                                 'pi_v0',
-                                 'full',
-                                 'full'],
-                'spont_emit_s0p1':['Acb',
-                                   None,
-                                   'sigma_v0',
-                                   'pi_v1',
-                                   'full',
-                                   'full'],
-                'spont_emit_s1p0':['Ada',
-                                   None,
-                                   'sigma_v1',
-                                   'pi_v0',
-                                   'full',
-                                   'full'],
-                'spont_emit_s1p1':['Adb',
-                                   None,
-                                   'sigma_v1',
-                                   'pi_v1',
-                                   'full',
-                                   'full'],
-                'vib_quench_s1s0':[['kqc','tot'],
-                                   'quencher',
-                                   'sigma_v1',
-                                   'sigma_v0',
-                                   'full',
-                                   'full']}
+                 'spont_emit_s1p1':['Adb',
+                                    None,
+                                    'sigma_v1',
+                                    'pi_v1',
+                                    'full',
+                                    'full'],
+                 'vib_quench_s1s0':[['kqc','tot'],
+                                    'quencher',
+                                    'sigma_v1',
+                                    'sigma_v0',
+                                    'full',
+                                    'full']}
 # accessors for vibronic_dict
 def baserate(ratetype):
     return vibronic_dict[ratetype][0]
