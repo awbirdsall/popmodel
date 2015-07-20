@@ -18,14 +18,12 @@ Capabilities:
 
 """
 
-# modules within package
 from . import ohcalcs as oh
 from . import atmcalcs as atm
 from . import loadhitran as loadhitran
 from . import sweep as sw
 from . import absprofile as ap
 
-# other modules
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import ode
@@ -257,11 +255,11 @@ class KineticsRun(object):
         # define relevant rates: fluor, spont_emit, stim_emit, quench
         # depends on fluorescence that is detected
         v0fluor = self.nlevels == 3 or (self.nlevels == 4 and
-            self.detcell['fluorwl'] == '308')
+                                        self.detcell['fluorwl'] == '308')
         v1fluor = self.nlevels == 4 and self.detcell['fluorwl'] == '282'
         v1v0fluor = self.nlevels == 4 and self.detcell['fluorwl'] == 'both'
         if v0fluor:
-            fluorpop = self.abcpop[dt_s,2,:].sum(1)
+            fluorpop = self.abcpop[dt_s, 2, :].sum(1)
             spont_emit = self.rates['Aca']
             fluor = spont_emit
             quench = self.rates['kqc']['tot']*self.detcell['Q']
@@ -270,26 +268,26 @@ class KineticsRun(object):
             # (whether uvlaser is on or not)
             rot_factor = np.empty_like(self.tbins[dt_s])
             # use idx_zeros to avoid divide-by-zero warning
-            idx_zeros = self.abcpop[dt_s,2,:].sum(1) == 0
+            idx_zeros = self.abcpop[dt_s, 2, :].sum(1) == 0
             rot_factor[idx_zeros] = 0
-            rot_factor[~idx_zeros] = (self.abcpop[dt_s,2,0][~idx_zeros]/
-                self.abcpop[dt_s,2,:].sum(1)[~idx_zeros])
+            rot_factor[~idx_zeros] = (self.abcpop[dt_s, 2, 0][~idx_zeros]/
+                                      self.abcpop[dt_s,2,:].sum(1)[~idx_zeros])
             stim_emit = (intensity(self.tbins[dt_s], self.uvlaser) *
-                    self.hline['Bcb'] * rot_factor)
+                        self.hline['Bcb'] * rot_factor)
         elif v1fluor:
-            fluorpop = self.abcpop[dt_s,3,:].sum(1)
+            fluorpop = self.abcpop[dt_s, 3, :].sum(1)
             spont_emit = self.rates['Ada'] + self.rates['Adb']
             fluor = self.rates['Ada']
             quench = (self.rates['kqc']['tot'] * self.detcell['Q']
-                + self.rates['kqd_vib'] * self.detcell['Q'])
+                      + self.rates['kqd_vib'] * self.detcell['Q'])
             # stim_emit calcs
             rot_factor = np.empty_like(self.tbins[dt_s])
-            idx_zeros = self.abcpop[dt_s,3,:].sum(1) == 0
+            idx_zeros = self.abcpop[dt_s, 3, :].sum(1) == 0
             rot_factor[idx_zeros] = 0
-            rot_factor[~idx_zeros] = (self.abcpop[dt_s,3,0][~idx_zeros]/
-                self.abcpop[dt_s,3,:].sum(1)[~idx_zeros])
+            rot_factor[~idx_zeros] = (self.abcpop[dt_s, 3, 0][~idx_zeros]/
+                                      self.abcpop[dt_s,3,:].sum(1)[~idx_zeros])
             stim_emit = (intensity(self.tbins[dt_s], self.uvlaser) *
-                    self.hline['Bcb'] * rot_factor)
+                         self.hline['Bcb'] * rot_factor)
         elif v1v0fluor:
             # treat 'c' and 'd' as single blob
             fluorpop = self.abcpop[dt_s,2:,:].sum(1).sum(1)
@@ -303,14 +301,14 @@ class KineticsRun(object):
             idx_zeros = self.abcpop[dt_s,3,:].sum(1).sum(1) == 0
             rot_factor[idx_zeros] = 0
             rot_factor[~idx_zeros] = (self.abcpop[dt_s,3,0][~idx_zeros]/
-                self.abcpop[dt_s,2:,:].sum(1).sum(1)[~idx_zeros])
+                                      self.abcpop[dt_s,2:,:].sum(1).sum(1)[~idx_zeros])
             stim_emit = (intensity(self.tbins[dt_s], self.uvlaser) *
-                    self.hline['Bcb'] * rot_factor)
+                         self.hline['Bcb'] * rot_factor)
         qyield = fluor / (spont_emit + stim_emit + quench)
         fluorescence = fluorpop * qyield
         # finally, take average over interval and report on per-second basis
-        avgfluorecencerate = fluorescence.mean() / dt
-        return avgfluorescencerate
+        avgfluorrate = fluorescence.mean() / dt
+        return avgfluorrate
 
     def solveode(self):
         '''Integrate ode describing two-photon LIF.
@@ -389,30 +387,31 @@ class KineticsRun(object):
         # set up ODE
 
         # Create initial state N0, all pop distributed in ground state
-        self.N0 = np.zeros((self.nlevels,self.sweep.las_bins.size+3))
+        self.N0 = np.zeros((self.nlevels, self.sweep.las_bins.size+3))
         if self.dosweep:
-            self.N0[0,0:-3] = self.abfeat.intpop * self.rotfrac[0] \
+            self.N0[0, 0:-3] = self.abfeat.intpop * self.rotfrac[0] \
             * self.detcell['ohtot'] / 2
-            self.N0[0,-3] = (self.abfeat.pop.sum() - self.abfeat.intpop.sum()) \
+            self.N0[0, -3] = (self.abfeat.pop.sum() - self.abfeat.intpop.sum()) \
                 *self.rotfrac[0] * self.detcell['ohtot'] / 2 # pop outside laser sweep
         else:
-            self.N0[0,0] = self.detcell['ohtot'] * self.rotfrac[0] / 2
-            self.N0[0,-3] = 0 # no population within rot level isn't excited. 
+            self.N0[0, 0] = self.detcell['ohtot'] * self.rotfrac[0] / 2
+            self.N0[0, -3] = 0 # no population within rot level isn't excited. 
         # other half of lambda doublet
-        self.N0[0,-2] = self.detcell['ohtot'] * self.rotfrac[0] / 2
-        self.N0[0,-1] = self.detcell['ohtot'] * (1-self.rotfrac[0]) # other rot
+        self.N0[0, -2] = self.detcell['ohtot'] * self.rotfrac[0] / 2
+        self.N0[0, -1] = self.detcell['ohtot'] * (1-self.rotfrac[0]) # other rot
 
         # Create array to store output at each timestep, depending on keepN:
         # N stores a/b/c state pops in each bin over time.
         # abcpop stores a/b/c pops, tracks in or out rot/lambda of interest.
         if self.odepar['keepN']:
-            self.N=np.empty((t_steps,self.nlevels,self.sweep.las_bins.size+3))
+            self.N = np.empty((t_steps, self.nlevels,
+                               self.sweep.las_bins.size+3))
             self.N[0] = self.N0
         else:
             # TODO rename abcpop to something better since ab abc abcd possible
-            self.abcpop=np.empty((t_steps,self.nlevels,2))
-            self.abcpop[0]=np.array([self.N0[:,0:-2].sum(1),
-                self.N0[:,-2:].sum(1)]).T
+            self.abcpop = np.empty((t_steps, self.nlevels, 2))
+            self.abcpop[0] = np.array([self.N0[:, 0:-2].sum(1),
+                                     self.N0[:,-2:].sum(1)]).T
 
         # Initialize scipy.integrate.ode object, lsoda method
         r = ode(self.dN)
@@ -424,18 +423,19 @@ class KineticsRun(object):
         self.logger.info('--------------------------')
 
         # Solve ODE
-        self.time_progress=0 # laspos looks at this to choose sweepfunc index.
-        old_complete=0 # tracks integration progress for self.logger
+        self.time_progress = 0 # laspos looks at this to choose sweepfunc index.
+        old_complete = 0 # tracks integration progress for self.logger
         while r.successful() and r.t < tl-dt:
             # display progress
             complete = r.t/tl
-            if floor(complete*100/10)!=floor(old_complete*100/10):
+            if floor(complete*100/10) != floor(old_complete*100/10):
                 self.logger.info(' {0:>3.0%} | {1:8.2g} | {2:7.0f} '
-                    .format(complete,r.t,self.sweepfunc[self.time_progress]))
+                                 .format(complete,r.t,
+                                         self.sweepfunc[self.time_progress]))
             old_complete = complete
             
             # integrate
-            entry=int(round(r.t/dt))+1
+            entry = int(round(r.t/dt))+1
             nextstep = r.integrate(r.t + dt)
             nextstepN = np.resize(nextstep,
                                   (self.nlevels,self.sweep.las_bins.size + 3))
@@ -445,9 +445,9 @@ class KineticsRun(object):
                 self.N[entry] = nextstepN
             else:
                 self.abcpop[entry] = np.array([nextstepN[:,0:-2].sum(1),
-                    nextstepN[:,-2:].sum(1)]).T
+                                               nextstepN[:,-2:].sum(1)]).T
 
-            self.time_progress+=1
+            self.time_progress += 1
 
         self.logger.info('solveode: done with integration')
 
@@ -487,7 +487,7 @@ class KineticsRun(object):
         '''
         # ode method requires y passed in and out of dN to be one-dimensional.
         # For calculations within dN, reshape y back into 2D form of N
-        y = y.reshape(self.nlevels,-1)
+        y = y.reshape(self.nlevels, -1)
 
         # laser intensities accounting for pulsing
         Lir = intensity(t, self.irlaser)
@@ -505,18 +505,18 @@ class KineticsRun(object):
         # rotational level or lambda level that is relaxed to
         if self.odepar['redistequil']:
             # equilibrium distribution in ground state, as calced for N0
-            fdist = (self.N0[0,:-1] / self.N0[0,:-1].sum())
+            fdist = (self.N0[0, :-1] / self.N0[0, :-1].sum())
             fdist_lambda = fdist[:-1] / fdist[:-1].sum()
             # for A-state, assume distribution same as N0 but lambda-doublet is
             # non-existent.
             fdist_A = np.append(fdist_lambda, 0)
-            fdist_array = np.vstack((fdist,fdist,fdist_A,fdist_A))
+            fdist_array = np.vstack((fdist, fdist, fdist_A, fdist_A))
         elif y[0,0:-1].sum() != 0:
             # instantaneous distribution in ground state
-            fdist = (y[0,:-1] / y[0,:-1].sum())
+            fdist = (y[0, :-1] / y[0, :-1].sum())
             fdist_lambda = fdist[:-1] / fdist[:-1].sum()
             fdist_A = np.append(fdist_lambda,0)
-            fdist_array = np.vstack((fdist,fdist,fdist_A,fdist_A))
+            fdist_array = np.vstack((fdist, fdist, fdist_A, fdist_A))
         else:
             fdist_array = np.zeros((y.shape[0], y.shape[1] - 1))
         
@@ -643,11 +643,11 @@ internal_dict = {'rot_pi':[self.rates.rr,
 
                 base = self.baserate_k(process)
                 coeff = self.ratecoeff(coefftype(process),t)
-                conc = y[startlevel,startrng]
+                conc = y[startlevel, startrng]
                 rate = base*coeff*conc
                 # for vibronic process, startrng = endrng
-                ratearray[startlevel,startrng] = -rate
-                ratearray[endlevel,endrng] = rate
+                ratearray[startlevel, startrng] = -rate
+                ratearray[endlevel, endrng] = rate
                 vibronicratearrays.update({process:ratearray})
         return vibronicratearrays
 
@@ -707,11 +707,13 @@ internal_dict = {'rot_pi':[self.rates.rr,
 
         for plotcode in subpop:
             if plotcode[0] == 'a' or plotcode[0] == 'b':
-                ax0.plot(self.tbins*1e6, self.popseries(plotcode), label=plotcode)
+                ax0.plot(self.tbins*1e6, self.popseries(plotcode),
+                         label=plotcode)
                 if maketwinx:
                     ax1._get_lines.color_cycle.next()
             elif plotcode[0] == 'c' or plotcode[0] == 'd':
-                ax1.plot(self.tbins*1e6, self.popseries(plotcode), label=plotcode)
+                ax1.plot(self.tbins*1e6, self.popseries(plotcode),
+                         label=plotcode)
                 ax0._get_lines.color_cycle.next()
             else:
                 raise NameError("improper plotcode ", plotcode)
@@ -776,7 +778,7 @@ internal_dict = {'rot_pi':[self.rates.rr,
         popseries = num/denom
         return popseries
 
-    def vslaserfigure(self,func,title='plot',yl='y axis',pngout=None):
+    def vslaserfigure(self, func, title='plot', yl='y axis', pngout=None):
         '''Make arbitrary plot in time with laser sweep as second plot
         
         Parameters
