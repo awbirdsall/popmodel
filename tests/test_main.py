@@ -61,3 +61,6 @@ def test_vslaserfigure_defaults(k_sweep):
 @pytest.mark.mpl_image_compare
 def test_absfigure_defaults(k_sweep):
     return k_sweep.absfigure()
+
+def test_calcfluor_returns_value(k_solved):
+    assert k_solved.calcfluor()
