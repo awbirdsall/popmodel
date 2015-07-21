@@ -130,14 +130,14 @@ class KineticsRun(object):
         self.uvline = uvline
 
         # Build dictionary of level names, based on instance-independent names
-        # in `levels`
-        self.levelsidx = levels
+        # in `LEVELS`
+        self.levelsidx = LEVELS
 
         if self.odepar['withoutUV']:
             self.nlevels = 2
         else:
             self.levelsidx.update({'uv_lower': 1})
-            if self.uvline['vib'][0]=='0':
+            if self.uvline['vib'][0] == '0':
                 self.nlevels = 3
                 self.levelsidx.update({'uv_upper': 2})
             else:
@@ -148,21 +148,21 @@ class KineticsRun(object):
 
         # Sweep object
         if sweep['dosweep']:
-            self.dosweep=True
-            self.sweep=sw.Sweep(stype=sweep['stype'],
-                                tsweep=sweep['tsweep'],
-                                width=sweep['width'],
-                                binwidth=sweep['binwidth'],
-                                factor=sweep['factor'],
-                                keepTsweep=sweep['keepTsweep'],
-                                keepwidth=sweep['keepwidth'])
+            self.dosweep = True
+            self.sweep = sw.Sweep(stype=sweep['stype'],
+                                  tsweep=sweep['tsweep'],
+                                  width=sweep['width'],
+                                  binwidth=sweep['binwidth'],
+                                  factor=sweep['factor'],
+                                  keepTsweep=sweep['keepTsweep'],
+                                  keepwidth=sweep['keepwidth'])
             self.sweep.avg_step_in_bin = sweep['avg_step_in_bin']
             # Average number of integration steps to spend in each frequency
             # bin as laser sweeps over frequencies. Default of 20 is
             # conservative, keeps in mind that time in each bin is variable
             # when sweep is sinusoidal.
         else:
-            self.dosweep=False
+            self.dosweep = False
             # stupid hack to be able to use self.sweep.las_bins.size elsewhere
             # and have it be 1.
             self.sweep = lambda: None
@@ -181,7 +181,7 @@ class KineticsRun(object):
                                             rates['kqc']['o2'],
                                             rates['kqc']['h2o'],
                                             self.detcell['xh2o'])
-        self.chooseline(hpar,irline)
+        self.chooseline(hpar, irline)
 
     def chooseline(self,hpar,label):
         '''Save single line of processed HITRAN file to self.hline.
@@ -228,12 +228,12 @@ class KineticsRun(object):
         List of starting time and ending time for calculation.
 
         duringuvpulse : Boolean
-        Define time interval to span period when UV laser is on. Overrides
-        `timerange` argument.
+        Whether time interval should span period when UV laser is on. Overrides
+        `timerange`.
 
         Output
         ------
-        avgfluorescencerate : float
+        avgfluorrate : float
         Average fluorescence rate over time interval, photons/s.
         '''
         if self.nlevels == 2:
@@ -335,70 +335,76 @@ class KineticsRun(object):
         '''
 
         self.logger.info('solveode: integrating at {} torr, {} K, OH in cell, '
-            '{:.2g} cm^-3'.format(self.detcell['press'],self.detcell['temp'],
-                self.detcell['ohtot']))
+                         '{:.2g} cm^-3'.format(self.detcell['press'],
+                                               self.detcell['temp'],
+                                               self.detcell['ohtot']))
         tl = self.odepar['inttime'] # total int time
 
         # set-up steps only required if IR laser is swept:
         if self.dosweep:
-            self.logger.info('solveode: sweep mode: {}'.format(self.sweep.stype))
+            self.logger.info('solveode: sweep mode: {}'
+                             .format(self.sweep.stype))
             self.makeAbs()
             
             # Align bins for IR laser and absorbance features for integration
             self.sweep.alignBins(self.abfeat)
 
             # avg_bintime calced for 'sin'. 'saw' twice as long.
-            avg_bintime = self.sweep.tsweep\
-                /(2*self.sweep.width/self.sweep.binwidth)
+            avg_bintime = (self.sweep.tsweep /
+                           (2*self.sweep.width/self.sweep.binwidth))
             dt = avg_bintime/self.sweep.avg_step_in_bin
             self.tbins = np.arange(0, tl+dt, dt)
             t_steps = np.size(self.tbins)
 
             # define local variables for convenience
-            num_las_bins=self.sweep.las_bins.size
+            num_las_bins = self.sweep.las_bins.size
             # lambda doublet, other rot
             tsweep = self.sweep.tsweep
             stype = self.sweep.stype
 
             # Determine location of swept IR (a to b) laser by defining 1D array
             # self.sweepfunc: las_bins index for each point in tsweep.
-            tindex=np.arange(np.size(self.tbins))
-            tindexsweep=np.searchsorted(self.tbins,tsweep,side='right')-1
-            if stype=='saw':
-                self.sweepfunc=np.floor((tindex%tindexsweep)*(num_las_bins)\
-                    /tindexsweep)
-            elif stype=='sin':
-                self.sweepfunc = np.round((num_las_bins-1)/2.\
-                    *np.sin(2*np.pi/tindexsweep*tindex)+(num_las_bins-1)/2.)
+            tindex = np.arange(np.size(self.tbins))
+            tindexsweep = np.searchsorted(self.tbins, tsweep, side='right')-1
+            if stype == 'saw':
+                self.sweepfunc = np.floor((tindex%tindexsweep)*(num_las_bins) /
+                                          tindexsweep)
+            elif stype == 'sin':
+                self.sweepfunc = np.round((num_las_bins-1)/2. *
+                                          np.sin(2*np.pi/tindexsweep*tindex) +
+                                          (num_las_bins-1)/2.)
             else:
-                self.sweepfunc= np.empty(np.size(tindex))
+                self.sweepfunc = np.empty(np.size(tindex))
                 self.sweepfunc.fill(np.floor(num_las_bins/2))
 
         else: # single 'bin' excited by laser. Set up in __init__
             dt = self.odepar['dt'] # s
             self.tbins = np.arange(0, tl+dt, dt)
             t_steps = np.size(self.tbins)
-            tindex=np.arange(t_steps)
-            self.sweepfunc= np.zeros(np.size(tindex))
+            tindex =np.arange(t_steps)
+            self.sweepfunc = np.zeros(np.size(tindex))
 
         self.logger.info('solveode: integrating {:.2g} s, '.format(tl)+
-            'step size {:.2g} s'.format(dt))
+                         'step size {:.2g} s'.format(dt))
 
         # set up ODE
 
         # Create initial state N0, all pop distributed in ground state
         self.N0 = np.zeros((self.nlevels, self.sweep.las_bins.size+3))
         if self.dosweep:
-            self.N0[0, 0:-3] = self.abfeat.intpop * self.rotfrac[0] \
-            * self.detcell['ohtot'] / 2
-            self.N0[0, -3] = (self.abfeat.pop.sum() - self.abfeat.intpop.sum()) \
-                *self.rotfrac[0] * self.detcell['ohtot'] / 2 # pop outside laser sweep
+            self.N0[0, 0:-3] = (self.abfeat.intpop * self.rotfrac[0] *
+                                self.detcell['ohtot'] / 2)
+            # pop outside laser sweep
+            self.N0[0, -3] = ((self.abfeat.pop.sum() -
+                               self.abfeat.intpop.sum()) * self.rotfrac[0] *
+                              self.detcell['ohtot'] / 2)
         else:
             self.N0[0, 0] = self.detcell['ohtot'] * self.rotfrac[0] / 2
             self.N0[0, -3] = 0 # no population within rot level isn't excited. 
         # other half of lambda doublet
         self.N0[0, -2] = self.detcell['ohtot'] * self.rotfrac[0] / 2
-        self.N0[0, -1] = self.detcell['ohtot'] * (1-self.rotfrac[0]) # other rot
+        # other rot
+        self.N0[0, -1] = self.detcell['ohtot'] * (1-self.rotfrac[0])
 
         # Create array to store output at each timestep, depending on keepN:
         # N stores a/b/c state pops in each bin over time.
@@ -411,7 +417,7 @@ class KineticsRun(object):
             # TODO rename abcpop to something better since ab abc abcd possible
             self.abcpop = np.empty((t_steps, self.nlevels, 2))
             self.abcpop[0] = np.array([self.N0[:, 0:-2].sum(1),
-                                     self.N0[:,-2:].sum(1)]).T
+                                       self.N0[:,-2:].sum(1)]).T
 
         # Initialize scipy.integrate.ode object, lsoda method
         r = ode(self.dN)
@@ -438,7 +444,7 @@ class KineticsRun(object):
             entry = int(round(r.t/dt))+1
             nextstep = r.integrate(r.t + dt)
             nextstepN = np.resize(nextstep,
-                                  (self.nlevels,self.sweep.las_bins.size + 3))
+                                  (self.nlevels, self.sweep.las_bins.size + 3))
 
             # save output
             if self.odepar['keepN'] == True:
@@ -592,7 +598,8 @@ internal_dict = {'rot_pi':[self.rates.rr,
         rrates = np.array([self.rates['rrout'], rrin]).T
         if self.odepar['rotequil']:
             rrvalues = np.vstack([internalrate(yl, r * self.detcell['Q'], dist,
-                'rot') for yl,r,dist in zip(y, rrates, fdist_array)])
+                                  'rot') for yl,r,dist in zip(y, rrates,
+                                                              fdist_array)])
         else:
             rrvalues = np.zeros_like(y)
 
@@ -601,7 +608,8 @@ internal_dict = {'rot_pi':[self.rates.rr,
         lrates = np.array([self.rates['lrout'], lrin]).T
         if self.odepar['lambdaequil']:
             lrvalues = np.vstack([internalrate(yl, r * self.detcell['Q'],
-                fdist_lambda, 'lambda') for yl,r in zip(y, lrates)])
+                                  fdist_lambda, 'lambda') for yl,r in
+                                  zip(y, lrates)])
         else:
             lrvalues = np.zeros_like(y)
 
@@ -628,11 +636,11 @@ internal_dict = {'rot_pi':[self.rates.rr,
     def vibronicprocesses(self, y, t):
         '''Create dict of rates for vibronic processes at given instant.
 
-        Builds dict from those processes in vibronic_dict that start and end in
+        Builds dict from those processes in VIBRONICDICT that start and end in
         vibronic levels that are included in the given KineticsRun instance.
         '''
         vibronicratearrays = {}
-        for process in vibronic_dict:
+        for process in VIBRONICDICT:
             if ((self.startlevel_idx(process) < self.nlevels) and 
                     (self.endlevel_idx(process) < self.nlevels)):
                 ratearray = np.zeros_like(y)
@@ -723,9 +731,11 @@ internal_dict = {'rot_pi':[self.rates.rr,
         ax0.set_ylabel('pi state pops (a or b)')
 
         # gather up lines and labels from both axes for unified legend
-        lines_list = [ax.get_legend_handles_labels()[0] for ax in fig.get_axes()]
+        lines_list = [ax.get_legend_handles_labels()[0] for ax in
+                      fig.get_axes()]
         lines = [items for sublists in lines_list for items in sublists]
-        labels_list = [ax.get_legend_handles_labels()[1] for ax in fig.get_axes()]
+        labels_list = [ax.get_legend_handles_labels()[1] for ax in
+                       fig.get_axes()]
         labels = [items for sublists in labels_list for items in sublists]
 
         topax = fig.get_axes()[-1]
@@ -749,11 +759,11 @@ internal_dict = {'rot_pi':[self.rates.rr,
         leveldict = {'a': 0, 'b': 1, 'c': 2, 'd': 3}
         levelidx = leveldict[plotcode[0]]
         sublevelabbrevdict = {'s': 'swept',
-                'h': 'lambda_half',
-                'd': 'rot_level',
-                'l': 'full'}
-        # use existing slicedict for sublevel
-        sublevelslice = slicedict[sublevelabbrevdict[plotcode[1]]]
+                              'h': 'lambda_half',
+                              'd': 'rot_level',
+                              'l': 'full'}
+        # use existing SLICEDICT for sublevel
+        sublevelslice = SLICEDICT[sublevelabbrevdict[plotcode[1]]]
         # all sublevels used here should be a slice, so num requires .sum(1).
         # however, just in case sublevel slice is single entry, check ndim of
         # numraw to see if .sum(1) is necessary.
@@ -765,7 +775,7 @@ internal_dict = {'rot_pi':[self.rates.rr,
 
         denomabbrev = plotcode[2]
         if denomabbrev == 'd':
-            denom = self.N[:, levelidx, slicedict['rot_level']].sum(1)
+            denom = self.N[:, levelidx, SLICEDICT['rot_level']].sum(1)
         elif denomabbrev == 'l':
             denom = self.N[:, levelidx, :].sum(1)
         elif denomabbrev == 'p':
@@ -795,26 +805,28 @@ internal_dict = {'rot_pi':[self.rates.rr,
         pngout : str
         filename to save PNG output. Displays plot if not given.
         '''
-        if hasattr(self,'abcpop')==False and hasattr(self,'N')==False:
+        if hasattr(self,'abcpop') == False and hasattr(self,'N') == False:
             self.logger.warning('need to run solveode first!')
             return
-        elif hasattr(self,'abcpop')==False and self.odepar['keepN']:
-            self.abcpop = np.empty((np.size(self.tbins),self.nlevels,2))
-            self.abcpop[:,:,0]=self.N[:,:,0:-2].sum(2)
-            self.abcpop[:,:,1]=self.N[:,:,-2:].sum(2)
+        elif hasattr(self,'abcpop') == False and self.odepar['keepN']:
+            self.abcpop = np.empty((np.size(self.tbins), self.nlevels,2))
+            self.abcpop[:, :, 0] = self.N[:, :, 0:-2].sum(2)
+            self.abcpop[:, :, 1] = self.N[:, :, -2:].sum(2)
         
         fig, (ax0, ax1) = plt.subplots(nrows=2, sharex=True)
         fig.subplots_adjust(hspace=.3)
-        ax0.plot(self.tbins*1e6,func)
+        x_usec = self.tbins*1e6 # microseconds tends to be natural units
+        ax0.plot(x_usec, func)
         ax0.set_title(title)
         ax0.set_ylabel(yl)
 
-        time_indices=np.arange(np.size(self.tbins))
         if self.dosweep:
-            ax1.plot(self.tbins*1e6,
-                self.sweep.las_bins[self.sweepfunc[time_indices].astype(int)]/1e6)
+            time_idx = np.arange(np.size(self.tbins))
+            las_idx_from_sweepfunc = self.sweepfunc[time_idx].astype(int)
+            y_las_freq_mhz = self.sweep.las_bins[las_idx_from_sweepfunc]/1e6
+            ax1.plot(x_usec, y_las_freq_mhz)
         else:
-            ax1.plot(self.tbins*1e6,self.tbins*0)
+            ax1.plot(x_usec, self.tbins*0)
         ax1.set_title('Position of IR beam')
         ax1.set_xlabel('Time ($\mu$s)')
         ax1.set_ylabel('Relative Frequency (MHz)')
@@ -835,14 +847,14 @@ internal_dict = {'rot_pi':[self.rates.rr,
         '''
         fig, (ax0) = plt.subplots(nrows=1)
         ax0.plot(self.abfeat.abs_freq/1e6,self.abfeat.pop)
-        ax0.set_title('Calculated absorption feature, ' \
-            + str(self.detcell['press'])+' torr')
+        ax0.set_title('Calculated absorption feature, '
+                      + str(self.detcell['press']) +' torr')
         ax0.set_xlabel('Relative frequency (MHz)')
         ax0.set_ylabel('Relative absorption')
         
         if laslines:
-            ax0.axvline(self.sweep.las_bins[0]/1e6,ls='--')
-            ax0.axvline(self.sweep.las_bins[-1]/1e6,ls='--')
+            ax0.axvline(self.sweep.las_bins[0]/1e6, ls='--')
+            ax0.axvline(self.sweep.las_bins[-1]/1e6, ls='--')
         return fig
 
     def savecsv(self, csvout):
@@ -851,14 +863,14 @@ internal_dict = {'rot_pi':[self.rates.rr,
         first column is time, next three columns are populations of a, b and
         c in state of interest.'''
 
-        if hasattr(self,'abcpop')==False and hasattr(self,'N')==True:
-            self.abcpop = np.empty((np.size(self.tbins),self.nlevels,2))
-            self.abcpop[:,:,0]=self.N[:,:,0:-2].sum(2)
-            self.abcpop[:,:,1]=self.N[:,:,-2:].sum(2)
+        if hasattr(self,'abcpop') == False and hasattr(self,'N') == True:
+            self.abcpop = np.empty((np.size(self.tbins), self.nlevels, 2))
+            self.abcpop[:, :, 0] = self.N[:, :, 0:-2].sum(2)
+            self.abcpop[:, :, 1] = self.N[:, :, -2:].sum(2)
         timeseries = self.tbins[:, np.newaxis] # bulk out so ndim = 2
-        abcpop_slice = self.abcpop[:,:,0] # slice along states of interest
-        np.savetxt(csvout,np.hstack((timeseries,abcpop_slice)),
-                delimiter = ",", fmt="%.6e")
+        abcpop_slice = self.abcpop[:, :, 0] # slice along states of interest
+        np.savetxt(csvout, np.hstack((timeseries, abcpop_slice)),
+                   delimiter = ",", fmt="%.6e")
 
     def saveOutput(self,file):
         '''Save result of solveode to npz file.
@@ -872,12 +884,12 @@ internal_dict = {'rot_pi':[self.rates.rr,
         Path of file to save output (.npz extension standard).
         '''
         np.savez(file,
-            abcpop=self.abcpop,
-            las_bins=self.sweep.las_bins,
-            tbins=self.tbins,
-            sweepfunc=self.sweepfunc,
-            abs_freq=self.abfeat.abs_freq,
-            pop=self.abfeat.pop)
+                 abcpop=self.abcpop,
+                 las_bins=self.sweep.las_bins,
+                 tbins=self.tbins,
+                 sweepfunc=self.sweepfunc,
+                 abs_freq=self.abfeat.abs_freq,
+                 pop=self.abfeat.pop)
 
     def loadOutput(self,file):
         '''Populate KineticsRun instance with results saved to npz file.
@@ -891,13 +903,13 @@ internal_dict = {'rot_pi':[self.rates.rr,
         Path of npz file with saved output.
         '''
         with np.load(file) as data:
-            self.abcpop=data['abcpop']
-            self.sweep.las_bins=data['las_bins']
-            self.tbins=data['tbins']
-            self.sweepfunc=data['sweepfunc']
+            self.abcpop = data['abcpop']
+            self.sweep.las_bins = data['las_bins']
+            self.tbins = data['tbins']
+            self.sweepfunc = data['sweepfunc']
             self.abfeat = Abs(0)
-            self.abfeat.abs_freq=data['abs_freq']
-            self.abfeat.pop=data['pop']
+            self.abfeat.abs_freq = data['abs_freq']
+            self.abfeat.pop = data['pop']
 
     # interpret ratetype parameters in terms of particular KineticsRun instance
     def baserate_k(self, ratetype):
@@ -915,9 +927,9 @@ def getnested(keys, d):
 
 ###############################################################################
 # GLOBAL VARS
-levels = {'pi_v0': 0, 'pi_v1': 1, 'sigma_v0': 2, 'sigma_v1': 3}
+LEVELS = {'pi_v0': 0, 'pi_v1': 1, 'sigma_v0': 2, 'sigma_v1': 3}
 
-slicedict = {'rot_level': np.s_[:-1],
+SLICEDICT = {'rot_level': np.s_[:-1],
              'rot_other': np.s_[-1],
              'lambda_half': np.s_[:-2],
              'lambda_other': np.s_[-2],
@@ -926,11 +938,11 @@ slicedict = {'rot_level': np.s_[:-1],
              'rot_level': np.s_[:-1],
              'rot_other': np.s_[-1],
              'full': np.s_[:]}
-# Form of vibronic_dict:
+# Form of VIBRONICDICT:
 # rate constant, 'concentration' it needs to be multiplied by (or `None` if
 # first-order), initial level, final level, initial range (within level), final
 # range.
-vibronic_dict = {'absorb_ir':['Bba',
+VIBRONICDICT = {'absorb_ir':['Bba',
                               'ir_laser',
                               'pi_v0',
                               'pi_v1',
@@ -1008,19 +1020,19 @@ vibronic_dict = {'absorb_ir':['Bba',
                                     'sigma_v0',
                                     'full',
                                     'full']}
-# accessors for vibronic_dict
+# accessors for VIBRONICDICT
 def baserate(ratetype):
-    return vibronic_dict[ratetype][0]
+    return VIBRONICDICT[ratetype][0]
 def coefftype(ratetype):
-    return vibronic_dict[ratetype][1]
+    return VIBRONICDICT[ratetype][1]
 def startlevel(ratetype):
-    return vibronic_dict[ratetype][2]
+    return VIBRONICDICT[ratetype][2]
 def endlevel(ratetype):
-    return vibronic_dict[ratetype][3]
+    return VIBRONICDICT[ratetype][3]
 def getstartrng(ratetype):
-    return vibronic_dict[ratetype][4]
+    return VIBRONICDICT[ratetype][4]
 def getendrng(ratetype):
-    return vibronic_dict[ratetype][5]
+    return VIBRONICDICT[ratetype][5]
 
 def buildsystem(nlevels):
     levela = {'term': 'pi', 'startof': ['absorb_ir']}
