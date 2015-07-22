@@ -265,8 +265,6 @@ class KineticsRun(object):
             dt = self.tbins[-1] - self.tbins[0]
             dt_s = np.s_[:]
 
-        # Define four rates used to calculate qyield: fluor, spont_emit,
-        # stim_emit, and quench. Use logic on which fluorescence is detected.
         v0fluor = self.nlevels == 3 or (self.nlevels == 4 and
                                         self.detcell['fluorwl'] == '308')
         v1fluor = self.nlevels == 4 and self.detcell['fluorwl'] == '282'
