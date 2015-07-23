@@ -13,7 +13,7 @@ from fractions import Fraction
 
 loadhitran_logger = logging.getLogger('popmodel.loadhitran')
 
-def importhitran(file, columns=None):
+def importhitran(hfile, columns=None):
     '''
     Extract complete set of data from HITRAN-type par file.
     
@@ -24,7 +24,7 @@ def importhitran(file, columns=None):
     
     PARAMETERS:
     -----------
-    file : str
+    hfile : str
     Input HITRAN file (160-char format)
     columns : tuple
     Column numbers to keep (default: all), e.g., (2, 3, 4, 7).
@@ -35,7 +35,7 @@ def importhitran(file, columns=None):
     Raw 1D ndarray with labels for each data entry. See HITRAN/JavaHawks
     documentation for explanation of each column.
     '''
-    data = np.genfromtxt(file,
+    data = np.genfromtxt(hfile,
                          delimiter = (2, 1, 12, 10, 10, 5, 5, 10, 4, 8, 15, 15,
                                       15, 15, 6, 12, 1, 7, 7),
                          dtype=[('molec_id', '<i4'),
@@ -61,7 +61,7 @@ def importhitran(file, columns=None):
                         
     return data
 
-def filterhitran(file, Scutoff=1e-20, vabmin=3250, vabmax=3800,
+def filterhitran(hfile, Scutoff=1e-20, vabmin=3250, vabmax=3800,
                  columns=(0, 2, 3, 4, 5, 7, 10, 11, 12, 13, 17, 18)):
     '''
     Filter lines from HITRAN-type par file by intensity and wavenumber.
@@ -70,7 +70,7 @@ def filterhitran(file, Scutoff=1e-20, vabmin=3250, vabmax=3800,
     
     PARAMETERS:
     -----------
-    file : str
+    hfile : str
     Input HITRAN file (160-char format).
 
     Scutoff : float
@@ -91,11 +91,11 @@ def filterhitran(file, Scutoff=1e-20, vabmin=3250, vabmax=3800,
     Labeled array containing columns molec_id, wnum_ab, S, A, g_air, E_low,
     ugq, lgq, ulq, llq, g_up, g_low.
     '''
-    data = importhitran(file, columns)
+    data = importhitran(hfile, columns)
 
     wavnuminrange = np.logical_and(data['wnum_ab']>=vabmin,
-            data['wnum_ab']<=vabmax)
-    data_filter = data[np.logical_and(data['S']>=Scutoff, wavnuminrange)]
+                                   data['wnum_ab']<=vabmax)
+    data_filter = data[np.logical_and(data['S'] >= Scutoff, wavnuminrange)]
     return data_filter
 
 def extractnjlabel_h2o(x):
@@ -132,7 +132,7 @@ def extractnjlabel_h2o(x):
     Jb = np.asarray([float(entry[3:6]) for entry in ulq])
 
     label = np.vectorize(lambda x,y,z:x+'_'+y+'_'+z) \
-            (Ja.astype('int').astype('str'),Jb.astype('int').astype('str'), \
+            (Ja.astype('int').astype('str'),Jb.astype('int').astype('str'),
             x['wnum_ab'].astype('str')) 
     return Ja, Jb, label
 
@@ -143,8 +143,6 @@ def extractnjlabel(x):
     Determine Na from the spin and J values provided in HITRAN, where
     J = N + spin (spin = +/-1/2). Determine Nb from Na and the P/Q/R branch.
 
-    Determine Nc assuming the P branch transition will be used for c<--b.
-
     PARAMETERS:
     -----------
     x : ndarray
@@ -153,16 +151,13 @@ def extractnjlabel(x):
 
     OUTPUTS:
     --------
-    Na, Nb, Nc, Ja, Jb, Jc, label : ndarrays (7)
-    N and J quantum numbers for 'a', 'b', and 'c' states, and strings
-    identifying the b <-- a transitions. Format of label is 'X_#(*)ll' where
-    X denotes branch (P, Q, R, ...), # describes J cases of upper and lower
-    states (1, 2, 12, 21), * is lower state N, and ll describes which half of
-    lambda doublet is upper/lower state (ef, fe, ee, ff).
+    Na, Nb, Ja, Jb, label : ndarrays (5)
+    N and J quantum numbers for 'a', and 'b' states, and strings identifying
+    the b <-- a transitions. Format of label is 'X_#(*)ll' where X denotes
+    branch (P, Q, R, ...), # describes J cases of upper and lower states (1, 2,
+    12, 21), * is lower state N, and ll describes which half of lambda doublet
+    is upper/lower state (ef, fe, ee, ff).
     '''
-    # TODO: refactor so direct HITRAN extraction is separate from calculations
-    # involving third state for TP LIF.
-
     # shorthand for HITRAN entries of interest, in x
     lgq = x['lgq']
     llq = x['llq']
@@ -194,63 +189,23 @@ def extractnjlabel(x):
     # index differentiates between two components of doublet from electronic
     # spin considerations: '1' means J = N+1/2, '2' means J = N-1/2, '12' means
     # transition is between '1' (upper) & '2' (lower), and vice versa for '21'
-    index_dict = {'1':(spinsa == spinsb) & (spinsa == 0.5),
-            '2':(spinsa == spinsb) & (spinsa == -0.5),
-            '21':(spinsa != spinsb) & (spinsa == 0.5),
-            '12':(spinsa != spinsb) & (spinsa == -0.5)}
-    indexarray = np.empty_like(spinsa,dtype='str')
+    index_dict = {'1': (spinsa == spinsb) & (spinsa == 0.5),
+                  '2': (spinsa == spinsb) & (spinsa == -0.5),
+                  '21': (spinsa != spinsb) & (spinsa == 0.5),
+                  '12': (spinsa != spinsb) & (spinsa == -0.5)}
+    indexarray = np.empty_like(spinsa, dtype='str')
     for label, entry in index_dict.iteritems():
-        indexarray[np.where(entry)]=label
+        indexarray[np.where(entry)] = label
     # bring it all together into a single 'label' string per line
-    label = np.vectorize(lambda x,y,z,w:x+'_'+y+'('+z+')'+w)(br_N,indexarray,
-            Na.astype('int').astype('str'),efsplit) 
+    label = np.vectorize(lambda x,y,z,w:x+'_'+y+'('+z+')'+w) \
+            (br_N, indexarray, Na.astype('int').astype('str'), efsplit) 
 
     Nb = Na + br_N_value    # N quantum number for b state
     Jb = Ja + br_J_value    # J quantum number for b state
 
-    Nc = Nb - 1    # Assuming P branch transition is most efficient for c<--b.
-    Jc = Jb - 1    # Assuming P branch transition is most efficient for c<--b.
+    return Na, Nb, Ja, Jb, label
 
-    return Na, Nb, Nc, Ja, Jb, Jc, label
-
-def processuv(harray):
-    '''get out things from UV lines for OH. Scratch space for now.
-    '''
-    vb = np.asarray([entry[-1] for entry in harray['ugq']]).astype('int')
-    va = np.asarray([entry[-1] for entry in harray['lgq']]).astype('int')
-
-def calculateUV(Nc, wnum_ab, E_low):
-    '''
-    Calculate c<--b transition wavenumber, accounting for rotational states.
-
-    Fails if Nc>4, so need to filter out high N transitions from HITRAN first
-    -- intensity cutoff should be fine.
-
-    PARAMETERS:
-    -----------
-    Nc : ndarray
-    N quantum numbers for 'c' state.
-
-    wnum_ab : ndarray
-    Wavenumbers of b<--a transition, cm^-1.
-
-    E_low : ndarray
-    Energy level of 'a' state, cm^-1
-
-    OUTPUTS:
-    --------
-    wnum_bc : ndarray
-    Wavenumbers of c<--b transition, cm^-1.
-    '''
-    # dict of N'-dependent c-state energy, cm^-1
-    # Using Erin/Glenn's values from 'McGee' for v'=0 c-state
-    E_cdict = {4:32778.1, 3:32623.4, 2:32542, 1:32474.5, 0:32778.1}    
-    # use dict to choose appropriate E_c
-    E_c = np.asarray([E_cdict[entry] for entry in Nc])    # Error if Nc>4 ...
-    wnum_bc = E_c - wnum_ab - E_low
-    return wnum_bc
-
-def processhitran(file, Scutoff=1e-20, vabmin=3250, vabmax=3800):
+def processhitran(hfile, Scutoff=1e-20, vabmin=3250, vabmax=3800):
     '''
     Extract parameters needed for IR-UV LIF kinetics modeling from HITRAN file.
     
@@ -261,7 +216,7 @@ def processhitran(file, Scutoff=1e-20, vabmin=3250, vabmax=3800):
 
     Parameters:
     -----------
-    file : str
+    hfile : str
     Input HITRAN file (160-char format).
     
     Scutoff : float
@@ -276,14 +231,12 @@ def processhitran(file, Scutoff=1e-20, vabmin=3250, vabmax=3800):
     Outputs:
     --------
     alldata : ndarray
-    Labeled array containing columns wnum_ab, wnum_bc, S, A, g_air, E_low, ga,
-    gb, Aba, Bba, Bab, FWHM_Dop_ab, FWHM_Dop_bc, qyield, Na, Nb, Nc, Ja, Jb,
-    Jc, label
+    Labeled array containing columns wnum_ab, S, g_air, E_low, ga, gb, Aba,
+    Bba, Bab, FWHM_Dop_ab, Na, Nb, Ja, Jb, label
     '''
     # Extract parameters from HITRAN
-    x = filterhitran(file, Scutoff, vabmin, vabmax)
+    x = filterhitran(hfile, Scutoff, vabmin, vabmax)
 
-    # values that should work for all molecule types
     vab = atm.wavenum_to_Hz*x['wnum_ab']
     
     # Extract and calculate Einstein coefficients. See ohcalcs.py for details
@@ -296,39 +249,18 @@ def processhitran(file, Scutoff=1e-20, vabmin=3250, vabmax=3800):
     Bab = oh.b12(Aba, ga, gb, vab)
 
     if x['molec_id'][0] == 13: # OH
-        Na, Nb, Nc, Ja, Jb, Jc, label = extractnjlabel(x)
-
-        wnum_bc = calculateUV(Nc, x['wnum_ab'], x['E_low'])
-        
-        # Perform calculations using transition frequencies, Hz.
-        vbc = atm.wavenum_to_Hz*wnum_bc
-        
-        # Remaining Einstein coefficients:
-        # Assuming same Acb regardless of b and c rotational level. Could do
-        # better looking at a dictionary of A values from HITRAN. Not a high
-        # priority to improve since not currently using UV calcs. TODO
-        Bcb = oh.b21(oh.Acb, vbc)
-        Bbc = oh.b12(oh.Acb, gb, oh.gc, vbc)
-
-        # Collision broadening:
+        Na, Nb, Ja, Jb, label = extractnjlabel(x)
         FWHM_Dop_ab = oh.fwhm_doppler(vab, oh.temp, oh.mass)
-        FWHM_Dop_bc = oh.fwhm_doppler(vbc, oh.temp, oh.mass)
-
-        # Quantum yield:
-        qyield = oh.Aca / (oh.Aca + Bcb*oh.Lbc + oh.Q*oh.kqc)
 
     elif x['molec_id'][0] == 1:  # H2O
         Ja, Jb, label = extractnjlabel_h2o(x)
         # just make everything else -1s
-        Na, Nb, Nc, Jc, wnum_bc, vbc, Bcb, Bbc, FWHM_Dop_ab, \
-            FWHM_Dop_bc, qyield = [np.ones_like(x['A'])*(-1)]*11
+        Na, Nb, FWHM_Dop_ab = [np.ones_like(x['A'])*(-1)]*3
 
     else:
-        print "Unsupported molecule type"
-        return
+        raise ValueError("Unsupported molecule type ", x['molec_id'][0])
 
     arraylist = [x['wnum_ab'],
-                wnum_bc,
                 x['S'],
                 x['g_air'],
                 x['E_low'],
@@ -337,22 +269,15 @@ def processhitran(file, Scutoff=1e-20, vabmin=3250, vabmax=3800):
                 Aba,
                 Bba,
                 Bab,
-                Bcb,
-                Bbc,
                 FWHM_Dop_ab,
-                FWHM_Dop_bc,
-                qyield,
                 Na,
                 Nb,
-                Nc,
                 Ja,
                 Jb,
-                Jc,
                 label
                 ]
 
     dtypelist = [('wnum_ab','float'),
-                ('wnum_bc','float'),
                 ('S','float'),
                 ('g_air', 'float'),
                 ('E_low','float'),
@@ -361,20 +286,14 @@ def processhitran(file, Scutoff=1e-20, vabmin=3250, vabmax=3800):
                 ('Aba', 'float'),
                 ('Bba', 'float'),
                 ('Bab', 'float'),
-                ('Bcb', 'float'),
-                ('Bbc', 'float'),
                 ('FWHM_Dop_ab', 'float'),
-                ('FWHM_Dop_bc', 'float'),
-                ('qyield', 'float'),
                 ('Na','int'),
                 ('Nb','int'),
-                ('Nc','int'),
                 ('Ja','int'),
                 ('Jb','int'),
-                ('Jc','int'),
                 ('label',label.dtype)
                 ]
 
-    alldata = np.rec.fromarrays(arraylist,dtype=dtypelist)
+    alldata = np.rec.fromarrays(arraylist, dtype=dtypelist)
     loadhitran_logger.info('processhitran: file processed')
     return alldata
