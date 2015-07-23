@@ -109,11 +109,50 @@ class KineticsRun(object):
     '''
     def __init__(self, hpar, irlaser, sweep, uvlaser, odepar, irline, uvline,
                  detcell, rates):
-        '''Initizalize KineticsRun using dictionaries of input parameters and
-        processed HITRAN file.
+        '''Initizalize KineticsRun with input recarray (hpar) and dicts (rest).
         
-        The input parameters can be gathered up in a yaml file (in format of
-        parameters.yaml) and passed in from the command line.
+        The input parameters dicts need to follow the format achieved by taking
+        a YAML file of format data/parameters_template.yaml and converting it
+        to a list of dicts using popmodel.importyaml. Note that some of these
+        dicts are nested. See comments in `parameters_template.yaml` for
+        description of individual parameters.
+
+        Parameters:
+        -----------
+        hpar : recarray
+        Describes set of infrared transitions as tabulated in a HITRAN-format
+        .par file and extracted using `processhitran` within popmodel's
+        `loadhitran` module.
+        
+        irlaser : dict
+        Parameters describing the infrared laser.
+
+        sweep : dict
+        Parameters describing the sweeping (dithering) behavior of the infrared
+        laser (if any).
+
+        uvlaser : dict
+        Parameters describing the ultraviolet laser.
+
+        odepar : dict
+        Parameters describing how the KineticsRun instance represents and
+        solves the ODE describing the population dynamics.
+
+        irline : dict
+        Parameters describing the particular line the infrared laser is tuned
+        to.
+
+        uvline : dict
+        Parameters describing the particular line the ultraviolet laser is
+        tuned to.
+
+        detcell : dict
+        Parameters describing the detection cell in which excitation and
+        detection takes place.
+
+        rates : dict
+        Parameters describing rates used in calculating population dynamics
+        related to excitation and fluorescence.
         '''
         self.logger = logging.getLogger('popmodel.KineticsRun')
 
@@ -129,8 +168,11 @@ class KineticsRun(object):
         self.irline = irline
         self.uvline = uvline
 
-        # Build dictionary of level names, based on instance-independent names
-        # in `LEVELS`
+        # Build dict self.levels of level names, using VIBRONICDICT
+        # nomenclature for name of keys. Each key points to a value
+        # corresponding to a particular vibronic state (0 = 'a', 1 = 'b',
+        # 2 = 'c', 3 = 'd'), which is the index used by arrays describing
+        # population (e.g., KineticsRun.N)
         self.levels = {}
 
         # build list of levels in system
@@ -215,17 +257,61 @@ class KineticsRun(object):
                                             rates['kqc']['o2'],
                                             rates['kqc']['h2o'],
                                             self.detcell['xh2o'])
-        self.chooseline(hpar, irline)
+        self.choosehline(hpar, irline)
+        self.setupuvline()
+        self.makerotfracarray()
 
-    def chooseline(self,hpar,label):
+    def choosehline(self, hpar, label):
         '''Save single line of processed HITRAN file to self.hline.
         '''
-        lineidx = np.where(hpar['label']==label)[0][0]
-        self.hline = hpar[lineidx]
-        self.logger.info('chooseline: using {} line at {:.4g} cm^-1'
+        self.hline = hpar[hpar['label'] == label][0] # shouldn't be issue with
+                                                     # multiple lines, same
+                                                     # label
+        self.logger.info('choosehline: using {} line at {:.4g} cm^-1'
                          .format(self.hline['label'], self.hline['wnum_ab']))
 
-        # extract rotation fraction for a b and c
+        self.rates['Bba'] = self.hline['Bba']
+        self.rates['Bab'] = self.hline['Bab']
+
+    def setupuvline(self):
+        '''Set up KineticsRun instance parameters related to UV transition.
+        '''
+        # could refactor this lookup to avoid duplicating same thing in
+        # loadhitran.extractnjlabel but whatever...
+        br_dict = {'O':-2, 'P':-1, 'Q':0, 'R':1, 'S':2}
+        uv_Ndiff = br_dict[self.uvline['rovib'][0]]
+        if self.levels.get('uv_lower') == 0:
+            self.uvline['Nc'] = self.hline['Na'] + uv_Ndiff
+        elif self.levels.get('uv_lower') == 1:
+            self.uvline['Nc'] = self.hline['Nb'] + uv_Ndiff
+        else: # just need dummy placeholder for makerotfracarray
+            self.uvline['Nc'] = 1
+        # same rot level of interest in 'c' and 'd'
+        self.uvline['Nd'] = self.uvline['Nc']
+
+        # For now, use calculateUV to lookup uvline wavelength
+        # TODO account for whether uv line is ca, cb, or db.
+        # TODO also account for Q_1 vs Q_12, etc.?
+        self.uvline['wnum_uv'] = oh.calculateUV(self.uvline['Nc'],
+                                                self.hline['wnum_ab'],
+                                                self.hline['E_low'])
+        
+        # UV Einstein coefficients:
+        # Assuming same Acb regardless of b and c rotational level or whether
+        # UV is to c or d. Could do better looking at a dictionary of A values
+        # TODO Determine whether to use Acb, Aca or Adb as base Einstein coeff.
+        vbc = atm.wavenum_to_Hz*self.uvline['wnum_uv']
+        self.rates['Bcb'] = oh.b21(oh.Acb, vbc)
+        self.rates['Bbc'] = oh.b12(oh.Acb, self.hline['gb'], oh.gc, vbc)
+
+    def makerotfracarray(self):
+        '''Make KineticsRun.rotfrac array of equilibrium rotational pops.
+
+        Writes result to self.rotfrac. Requires self.hline and self.uvline to
+        already be created. Array has values for a through d vibronic states,
+        regardless of self.nlevels. Avoid any issues with size mismatch by
+        zipping through vibronic levels and rotfrac arrays as appropriate.
+        '''
         # figure out which 'F1' or 'F2' series that a and b state are:
         f_a = int(self.hline['label'][2]) - 1
         if self.hline['label'][3] == '(': # i.e., not '12' or '21' line
@@ -234,14 +320,8 @@ class KineticsRun(object):
             f_b = int(self.hline['label'][3]) - 1
         self.rotfrac = np.array([oh.rotfrac['a'][f_a][self.hline['Na']-1],
                                  oh.rotfrac['b'][f_b][self.hline['Nb']-1],
-                                 oh.rotfrac['c'][self.hline['Nc']],
-                                 # TODO refactor 'Nc" out of hline
-                                 # assume Nd = Nc
-                                 oh.rotfrac['d'][self.hline['Nc']]])
-        self.rates['Bcb'] = self.hline['Bcb']
-        self.rates['Bbc'] = self.hline['Bbc']
-        self.rates['Bba'] = self.hline['Bba']
-        self.rates['Bab'] = self.hline['Bab']
+                                 oh.rotfrac['c'][self.uvline['Nc']],
+                                 oh.rotfrac['d'][self.uvline['Nd']]])
 
     def makeAbs(self):
         '''Make an absorption profile using self.hline and experimental
@@ -322,7 +402,7 @@ class KineticsRun(object):
                     self.N[dt_s, 2, :].sum(1)[~idx_zeros]
                     )
                 stim_emit = (intensity(self.tbins[dt_s], self.uvlaser) *
-                             self.hline['Bcb'] * rot_factor)
+                             self.rates['Bcb'] * rot_factor)
             else:
                 stim_emit = 0
             qyield = fluor / (spont_emit + stim_emit + quench)
@@ -348,7 +428,7 @@ class KineticsRun(object):
                     [~idx_zeros] / self.N[dt_s, 3, :].sum(1)[~idx_zeros]
                     )
                 stim_emit = (intensity(self.tbins[dt_s], self.uvlaser) *
-                             self.hline['Bcb'] * rot_factor)
+                             self.rates['Bcb'] * rot_factor)
             else:
                 stim_emit = 0
             qyield = fluor / (spont_emit + stim_emit + quench)
@@ -1028,8 +1108,6 @@ def _getnested(keys, d):
 
 ###############################################################################
 # GLOBAL VARS
-LEVELS = {'pi_v0': 0, 'pi_v1': 1, 'sigma_v0': 2, 'sigma_v1': 3}
-
 SLICEDICT = {'rot_level': np.s_[:-1],
              'rot_other': np.s_[-1],
              'lambda_half': np.s_[:-2],

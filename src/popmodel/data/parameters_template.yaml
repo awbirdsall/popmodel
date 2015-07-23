@@ -43,7 +43,7 @@ irline: 'P_1(3)ff' # follow label system in loadhitran
 
 uvline:
     vib: '11' # vib bands: 11, 10, 00 (with appropriate withoutUV, withoutIR)
-    rovib: null # not implemented
+    rovib: 'P_1' # abbreviated version of `irline` label
 
 detcell: # detection cell
     press: 3 # torr

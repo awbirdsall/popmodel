@@ -274,6 +274,37 @@ def fwhm_doppler(nu, temp, mass):
     fwhm = (2*m.pi*nu/c) * (8*kb*temp*m.log(2)/mass)**0.5
     return fwhm
 
+def calculateUV(Nc, wnum_ab, E_low):
+    '''
+    Calculate c<--b transition wavenumber, accounting for rotational states.
+
+    Fails if Nc>4, so need to filter out high N transitions from HITRAN first
+    -- intensity cutoff should be fine.
+
+    PARAMETERS:
+    -----------
+    Nc : int
+    N quantum number for 'c' state.
+
+    wnum_ab : float
+    Wavenumber of b<--a transition, cm^-1.
+
+    E_low : float
+    Energy level of 'a' state, cm^-1
+
+    OUTPUTS:
+    --------
+    wnum_bc : float
+    Wavenumbers of c<--b transition, cm^-1.
+    '''
+    # dict of N'-dependent c-state energy, cm^-1
+    # Using Erin/Glenn's values from 'McGee' for v'=0 c-state
+    E_cdict = {4: 32778.1, 3: 32623.4, 2: 32542, 1: 32474.5, 0: 32778.1}    
+    # use dict to choose appropriate E_c
+    E_c = E_cdict[Nc] # Error if Nc>4 ...
+    wnum_bc = E_c - wnum_ab - E_low
+    return wnum_bc
+
 def press_broaden(press=op_press):
     '''
     Uses HITRAN parameters to calculate HWHM, in MHz, at 'press'

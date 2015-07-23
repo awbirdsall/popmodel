@@ -34,7 +34,7 @@ def k_solved(hpar, par):
 def k_sweep(hpar, par):
     par_sweep = deepcopy(par)
     par_sweep['sweep']['dosweep'] = True
-    k_sweep = pm.KineticsRun(hpar, **par)
+    k_sweep = pm.KineticsRun(hpar, **par_sweep)
     k_sweep.solveode()
     return k_sweep
 

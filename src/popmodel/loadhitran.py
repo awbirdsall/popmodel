@@ -143,8 +143,6 @@ def extractnjlabel(x):
     Determine Na from the spin and J values provided in HITRAN, where
     J = N + spin (spin = +/-1/2). Determine Nb from Na and the P/Q/R branch.
 
-    Determine Nc assuming the P branch transition will be used for c<--b.
-
     PARAMETERS:
     -----------
     x : ndarray
@@ -153,16 +151,13 @@ def extractnjlabel(x):
 
     OUTPUTS:
     --------
-    Na, Nb, Nc, Ja, Jb, Jc, label : ndarrays (7)
-    N and J quantum numbers for 'a', 'b', and 'c' states, and strings
-    identifying the b <-- a transitions. Format of label is 'X_#(*)ll' where
-    X denotes branch (P, Q, R, ...), # describes J cases of upper and lower
-    states (1, 2, 12, 21), * is lower state N, and ll describes which half of
-    lambda doublet is upper/lower state (ef, fe, ee, ff).
+    Na, Nb, Ja, Jb, label : ndarrays (5)
+    N and J quantum numbers for 'a', and 'b' states, and strings identifying
+    the b <-- a transitions. Format of label is 'X_#(*)ll' where X denotes
+    branch (P, Q, R, ...), # describes J cases of upper and lower states (1, 2,
+    12, 21), * is lower state N, and ll describes which half of lambda doublet
+    is upper/lower state (ef, fe, ee, ff).
     '''
-    # TODO: refactor so direct HITRAN extraction is separate from calculations
-    # involving third state for TP LIF.
-
     # shorthand for HITRAN entries of interest, in x
     lgq = x['lgq']
     llq = x['llq']
@@ -208,47 +203,7 @@ def extractnjlabel(x):
     Nb = Na + br_N_value    # N quantum number for b state
     Jb = Ja + br_J_value    # J quantum number for b state
 
-    Nc = Nb - 1    # Assuming P branch transition is most efficient for c<--b.
-    Jc = Jb - 1    # Assuming P branch transition is most efficient for c<--b.
-
-    return Na, Nb, Nc, Ja, Jb, Jc, label
-
-def processuv(harray):
-    '''get out things from UV lines for OH. Scratch space for now.
-    '''
-    vb = np.asarray([entry[-1] for entry in harray['ugq']]).astype('int')
-    va = np.asarray([entry[-1] for entry in harray['lgq']]).astype('int')
-
-def calculateUV(Nc, wnum_ab, E_low):
-    '''
-    Calculate c<--b transition wavenumber, accounting for rotational states.
-
-    Fails if Nc>4, so need to filter out high N transitions from HITRAN first
-    -- intensity cutoff should be fine.
-
-    PARAMETERS:
-    -----------
-    Nc : ndarray
-    N quantum numbers for 'c' state.
-
-    wnum_ab : ndarray
-    Wavenumbers of b<--a transition, cm^-1.
-
-    E_low : ndarray
-    Energy level of 'a' state, cm^-1
-
-    OUTPUTS:
-    --------
-    wnum_bc : ndarray
-    Wavenumbers of c<--b transition, cm^-1.
-    '''
-    # dict of N'-dependent c-state energy, cm^-1
-    # Using Erin/Glenn's values from 'McGee' for v'=0 c-state
-    E_cdict = {4: 32778.1, 3: 32623.4, 2: 32542, 1: 32474.5, 0: 32778.1}    
-    # use dict to choose appropriate E_c
-    E_c = np.asarray([E_cdict[entry] for entry in Nc])    # Error if Nc>4 ...
-    wnum_bc = E_c - wnum_ab - E_low
-    return wnum_bc
+    return Na, Nb, Ja, Jb, label
 
 def processhitran(hfile, Scutoff=1e-20, vabmin=3250, vabmax=3800):
     '''
@@ -276,14 +231,12 @@ def processhitran(hfile, Scutoff=1e-20, vabmin=3250, vabmax=3800):
     Outputs:
     --------
     alldata : ndarray
-    Labeled array containing columns wnum_ab, wnum_bc, S, A, g_air, E_low, ga,
-    gb, Aba, Bba, Bab, FWHM_Dop_ab, FWHM_Dop_bc, qyield, Na, Nb, Nc, Ja, Jb,
-    Jc, label
+    Labeled array containing columns wnum_ab, S, g_air, E_low, ga, gb, Aba,
+    Bba, Bab, FWHM_Dop_ab, Na, Nb, Ja, Jb, label
     '''
     # Extract parameters from HITRAN
     x = filterhitran(hfile, Scutoff, vabmin, vabmax)
 
-    # values that should work for all molecule types
     vab = atm.wavenum_to_Hz*x['wnum_ab']
     
     # Extract and calculate Einstein coefficients. See ohcalcs.py for details
@@ -296,37 +249,18 @@ def processhitran(hfile, Scutoff=1e-20, vabmin=3250, vabmax=3800):
     Bab = oh.b12(Aba, ga, gb, vab)
 
     if x['molec_id'][0] == 13: # OH
-        Na, Nb, Nc, Ja, Jb, Jc, label = extractnjlabel(x)
-
-        wnum_bc = calculateUV(Nc, x['wnum_ab'], x['E_low'])
-        
-        # Perform calculations using transition frequencies, Hz.
-        vbc = atm.wavenum_to_Hz*wnum_bc
-        
-        # Remaining Einstein coefficients:
-        # Assuming same Acb regardless of b and c rotational level. Could do
-        # better looking at a dictionary of A values from HITRAN.
-        Bcb = oh.b21(oh.Acb, vbc)
-        Bbc = oh.b12(oh.Acb, gb, oh.gc, vbc)
-
-        # Collision broadening:
+        Na, Nb, Ja, Jb, label = extractnjlabel(x)
         FWHM_Dop_ab = oh.fwhm_doppler(vab, oh.temp, oh.mass)
-        FWHM_Dop_bc = oh.fwhm_doppler(vbc, oh.temp, oh.mass)
-
-        # Quantum yield:
-        qyield = oh.Aca / (oh.Aca + Bcb*oh.Lbc + oh.Q*oh.kqc)
 
     elif x['molec_id'][0] == 1:  # H2O
         Ja, Jb, label = extractnjlabel_h2o(x)
         # just make everything else -1s
-        Na, Nb, Nc, Jc, wnum_bc, vbc, Bcb, Bbc, FWHM_Dop_ab, \
-        FWHM_Dop_bc, qyield = [np.ones_like(x['A'])*(-1)]*11
+        Na, Nb, FWHM_Dop_ab = [np.ones_like(x['A'])*(-1)]*3
 
     else:
         raise ValueError("Unsupported molecule type ", x['molec_id'][0])
 
     arraylist = [x['wnum_ab'],
-                wnum_bc,
                 x['S'],
                 x['g_air'],
                 x['E_low'],
@@ -335,22 +269,15 @@ def processhitran(hfile, Scutoff=1e-20, vabmin=3250, vabmax=3800):
                 Aba,
                 Bba,
                 Bab,
-                Bcb,
-                Bbc,
                 FWHM_Dop_ab,
-                FWHM_Dop_bc,
-                qyield,
                 Na,
                 Nb,
-                Nc,
                 Ja,
                 Jb,
-                Jc,
                 label
                 ]
 
     dtypelist = [('wnum_ab','float'),
-                ('wnum_bc','float'),
                 ('S','float'),
                 ('g_air', 'float'),
                 ('E_low','float'),
@@ -359,17 +286,11 @@ def processhitran(hfile, Scutoff=1e-20, vabmin=3250, vabmax=3800):
                 ('Aba', 'float'),
                 ('Bba', 'float'),
                 ('Bab', 'float'),
-                ('Bcb', 'float'),
-                ('Bbc', 'float'),
                 ('FWHM_Dop_ab', 'float'),
-                ('FWHM_Dop_bc', 'float'),
-                ('qyield', 'float'),
                 ('Na','int'),
                 ('Nb','int'),
-                ('Nc','int'),
                 ('Ja','int'),
                 ('Jb','int'),
-                ('Jc','int'),
                 ('label',label.dtype)
                 ]
 
