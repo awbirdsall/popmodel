@@ -131,20 +131,54 @@ class KineticsRun(object):
 
         # Build dictionary of level names, based on instance-independent names
         # in `LEVELS`
-        self.levelsidx = LEVELS
+        self.levels = {}
 
-        if self.odepar['withoutUV']:
-            self.nlevels = 2
-        else:
-            self.levelsidx.update({'uv_lower': 1})
-            if self.uvline['vib'][0] == '0':
-                self.nlevels = 3
-                self.levelsidx.update({'uv_upper': 2})
+        # build list of levels in system
+        self.system = ['levela']
+        self.levels.update({'pi_v0': 0})
+        if self.odepar['withoutIR']:
+            # either no excitation at all or UV excitation from X(v"=0)
+            if self.odepar['withoutUV']:
+                pass
+            elif self.uvline['vib'][1] == '0':
+                # still include X(v"=1) for consistency and for possibility of
+                # relaxation to that level
+                self.system.append('levelb')
+                self.levels.update({'pi_v1': 1})
+                self.levels.update({'sigma_v0': 2, 'uv_lower': 0})
+                if self.uvline['vib'][0] == '0':
+                    self.system.append('levelc')
+                    self.levels.update({'uv_upper': 2})
+                elif self.uvline['vib'][0] == '1':
+                    self.system = self.system + ['levelc', 'leveld']
+                    self.levels.update({'sigma_v1': 3, 'uv_upper': 3})
+                else:
+                    raise ValueError('Unsupported upper v\' of UV transition')
             else:
-                self.nlevels = 4
-                self.levelsidx.update({'uv_upper': 3})
+                raise ValueError('If withoutIR is True, uvline[\'vib\'] must '
+                                 'originate in v\"=0')
+        else:
+            # either no UV excitation or UV excitation from X(v"=1)
+            self.system.append('levelb')
+            self.levels.update({'pi_v1': 1})
+            if self.odepar['withoutUV']:
+                pass
+            elif self.uvline['vib'][1] == '1':
+                # UV excitation into A(v'=0) OR A(v'=1)
+                self.levels.update({'sigma_v0': 2, 'uv_lower': 1})
+                if self.uvline['vib'][0] == '0':
+                    self.system.append('levelc')
+                    self.levels.update({'uv_upper': 2})
+                elif self.uvline['vib'][0] == '1':
+                    self.system = self.system + ['levelc', 'leveld']
+                    self.levels.update({'sigma_v1': 3, 'uv_upper': 3})
+                else:
+                    raise ValueError('Unsupported upper v\' of UV transition')
+            else:
+                raise ValueError('If withoutIR is False, uvline[\'vib\'] must '
+                                 'originate in v\"=1')
 
-        self.system = buildsystem(self.nlevels)
+        self.nlevels = len(self.system)
 
         # Sweep object
         if sweep['dosweep']:
@@ -250,7 +284,7 @@ class KineticsRun(object):
         # Fluorescence does not apply if the only levels are in the electronic
         # ground state.
         if self.nlevels == 2:
-            return None
+            raise ValueError('calcfluor requires electronically excited pop')
 
         # define time range
         if duringuvpulse:
@@ -661,27 +695,70 @@ internal_dict = {'rot_pi':[self.rates.rr,
         '''Create dict of rates for vibronic processes at given instant.
 
         Builds dict from those processes in VIBRONICDICT that start and end in
-        vibronic levels that are included in the given KineticsRun instance.
-        '''
-        vibronicratearrays = {}
-        for process in VIBRONICDICT:
-            if ((self.startlevel_idx(process) < self.nlevels) and 
-                    (self.endlevel_idx(process) < self.nlevels)):
-                ratearray = np.zeros_like(y)
-                startlevel = self.startlevel_idx(process)
-                startrng = self.getrngidx(getstartrng(process))()
-                endlevel = self.endlevel_idx(process)
-                endrng = self.getrngidx(getendrng(process))()
+        vibronic levels included in KineticsRun instance.
 
-                base = self.baserate_k(process)
-                coeff = self.ratecoeff(coefftype(process),t)
-                conc = y[startlevel, startrng]
-                rate = base*coeff*conc
-                # for vibronic process, startrng = endrng
-                ratearray[startlevel, startrng] = -rate
-                ratearray[endlevel, endrng] = rate
-                vibronicratearrays.update({process:ratearray})
-        return vibronicratearrays
+        Parameters
+        ----------
+        y : ndarray
+        Population array used by KineticsRun.dN
+
+        t : float
+        Time (s) used by KineticsRun.dN and solveode
+
+        Outputs
+        -------
+        vibronicratedict : dict
+        Dictionary of relevant vibronic rates, keyed by name in VIBRONICDICT.
+        '''
+        vibronicratedict = {process: self.ratearray(process, y, t) for
+                            process in VIBRONICDICT if self.included(process)}
+        return vibronicratedict
+
+    def ratearray(self, process, y, t):
+        '''Calculate rate array for a KineticsRun instance and named process.
+
+        Parameters
+        ----------
+        process : str
+        Name of process in VIBRONICDICT
+
+        y : ndarray
+        Population array used by KineticsRun.dN
+
+        t : float
+        Time (s) used by KineticsRun.dN and solveode
+
+        Outputs
+        -------
+        rarray : ndarray
+        Calculated array of rates, with same shape as y.
+        '''
+        rarray = np.zeros_like(y)
+        startlevel = self.startlevel_lookup(process)
+        startrng = self.getrngidx(getstartrng(process))()
+        endlevel = self.endlevel_lookup(process)
+        endrng = self.getrngidx(getendrng(process))()
+
+        base = self.baserate_k(process)
+        coeff = self.ratecoeff(coefftype(process),t)
+        conc = y[startlevel, startrng]
+        rate = base*coeff*conc
+        # for vibronic process, startrng = endrng
+        rarray[startlevel, startrng] = -rate
+        rarray[endlevel, endrng] = rate
+        return rarray
+
+    def included(self, proc):
+        '''Determine whether a VIBRONICDICT process should be included.
+        '''
+        if coefftype(proc) == 'ir_laser' and self.odepar['withoutIR'] == True:
+            return False
+        elif coefftype(proc) == 'uv_laser' and self.odepar['withoutUV'] == True:
+            return False
+        else:
+            to_include = (startlevel(proc) in self.levels and
+                          endlevel(proc) in self.levels)
+            return to_include
 
     def getrngidx(self, rnglabel):
         '''Look up slice for named range within level
@@ -937,13 +1014,13 @@ internal_dict = {'rot_pi':[self.rates.rr,
 
     # interpret ratetype parameters in terms of particular KineticsRun instance
     def baserate_k(self, ratetype):
-        return getnested(baserate(ratetype), self.rates)
-    def startlevel_idx(self, ratetype):
-        return self.levelsidx[startlevel(ratetype)]
-    def endlevel_idx(self, ratetype):
-        return self.levelsidx[endlevel(ratetype)]
+        return _getnested(baserate(ratetype), self.rates)
+    def startlevel_lookup(self, ratetype):
+        return self.levels[startlevel(ratetype)]
+    def endlevel_lookup(self, ratetype):
+        return self.levels[endlevel(ratetype)]
 
-def getnested(keys, d):
+def _getnested(keys, d):
     '''Access data in nested dict using a list of keys.'''
     if not isinstance(keys, list): # handle single key
         keys = [keys]
@@ -1058,25 +1135,26 @@ def getstartrng(ratetype):
 def getendrng(ratetype):
     return VIBRONICDICT[ratetype][5]
 
-def buildsystem(nlevels):
-    levela = {'term': 'pi', 'startof': ['absorb_ir']}
-    levelb = {'term': 'pi', 'startof': ['absorb_uv',
-                                        'vib_quench',
-                                        'stim_emit_ir',
-                                        'spont_emit']}
-    levelc = {'term': 'sigma', 'startof' : ['elec_quench',
-                                           'stim_emit_uv',
-                                           'spont_emit']}
-    leveld = {'term': 'sigma', 'startof' : ['elec_quench',
-                                           'stim_emit_uv',
-                                           'spont_emit',
-                                           'vib_quench']}
-    if nlevels == 2:
-        return [levela, levelb]
-    elif nlevels == 3:
-        return [levela, levelb, levelc]
-    else:
-        return [levela, levelb, levelc, leveld]
+# deprecated
+# def buildsystem(nlevels):
+#     levela = {'term': 'pi', 'startof': ['absorb_ir']}
+#     levelb = {'term': 'pi', 'startof': ['absorb_uv',
+#                                         'vib_quench',
+#                                         'stim_emit_ir',
+#                                         'spont_emit']}
+#     levelc = {'term': 'sigma', 'startof' : ['elec_quench',
+#                                            'stim_emit_uv',
+#                                            'spont_emit']}
+#     leveld = {'term': 'sigma', 'startof' : ['elec_quench',
+#                                            'stim_emit_uv',
+#                                            'spont_emit',
+#                                            'vib_quench']}
+#     if nlevels == 2:
+#         return [levela, levelb]
+#     elif nlevels == 3:
+#         return [levela, levelb, levelc]
+#     else:
+#         return [levela, levelb, levelc, leveld]
 
 def intensity(t, laser):
     '''Calculate spec intensity of laser at given array of times.
@@ -1101,9 +1179,10 @@ def intensity(t, laser):
         return np.squeeze(L)
     return L
 
+# vibronicrate currently unused within KineticsRun.dN calcs
 def vibronicrate(y, rateconst, start, final):
     '''calculate contribution to overall rate array for process that
-    goes between a/b/c states.
+    goes between a/b/c/d states.
 
     Parameters
     ----------
@@ -1111,10 +1190,10 @@ def vibronicrate(y, rateconst, start, final):
     Array of populations.
     rateconst : float or array
     First-order rate constant for process, s^-1
-    start : int (0, 1 or 2)
-    Starting level for rate process (a/b/c)
-    final: int (0, 1 or 2)
-    Final level for rate process (a/b/c)
+    start : int (0, 1, 2 or 3)
+    Starting level for rate process (a/b/c/d)
+    final: int (0, 1, 2 or 3)
+    Final level for rate process (a/b/c/d)
 
     Output
     ------
