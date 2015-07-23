@@ -85,8 +85,8 @@ def test_absfigure_defaults(k_sweep):
 def test_calcfluor_returns_value(k_solved):
     assert k_solved.calcfluor()
 
-def test_calcfluor_uvonly_returns_sensical_value(k_uvonly):
-    assert (k_uvonly.calcfluor() > 0 and k_uvonly.calcfluor() < 1)
+def test_calcfluor_uvonly_returns_positive_value(k_uvonly):
+    assert (k_uvonly.calcfluor() > 0)
 
 @pytest.mark.parametrize("par_laser_setup", [
     {'uvline': {'vib': '00'}, 'odepar': {'withoutUV': False,
