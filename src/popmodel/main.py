@@ -1213,27 +1213,6 @@ def getstartrng(ratetype):
 def getendrng(ratetype):
     return VIBRONICDICT[ratetype][5]
 
-# deprecated
-# def buildsystem(nlevels):
-#     levela = {'term': 'pi', 'startof': ['absorb_ir']}
-#     levelb = {'term': 'pi', 'startof': ['absorb_uv',
-#                                         'vib_quench',
-#                                         'stim_emit_ir',
-#                                         'spont_emit']}
-#     levelc = {'term': 'sigma', 'startof' : ['elec_quench',
-#                                            'stim_emit_uv',
-#                                            'spont_emit']}
-#     leveld = {'term': 'sigma', 'startof' : ['elec_quench',
-#                                            'stim_emit_uv',
-#                                            'spont_emit',
-#                                            'vib_quench']}
-#     if nlevels == 2:
-#         return [levela, levelb]
-#     elif nlevels == 3:
-#         return [levela, levelb, levelc]
-#     else:
-#         return [levela, levelb, levelc, leveld]
-
 def intensity(t, laser):
     '''Calculate spec intensity of laser at given array of times.
 
@@ -1257,33 +1236,6 @@ def intensity(t, laser):
         return np.squeeze(L)
     return L
 
-# vibronicrate currently unused within KineticsRun.dN calcs
-def vibronicrate(y, rateconst, start, final):
-    '''calculate contribution to overall rate array for process that
-    goes between a/b/c/d states.
-
-    Parameters
-    ----------
-    y : array
-    Array of populations.
-    rateconst : float or array
-    First-order rate constant for process, s^-1
-    start : int (0, 1, 2 or 3)
-    Starting level for rate process (a/b/c/d)
-    final: int (0, 1, 2 or 3)
-    Final level for rate process (a/b/c/d)
-
-    Output
-    ------
-    term : np.ndarray
-    2D array shaped like y containing rates for process
-    '''
-    term = np.zeros_like(y)
-    rate = rateconst * y[start]
-    term[start] = -rate
-    term[final] = rate
-    return term
-    
 def internalrate(yl, ratecon, equildist, ratetype):
     '''calculate contribution to overall rate array for process
     internal to single a/b/c level with equilibrium distribution.
