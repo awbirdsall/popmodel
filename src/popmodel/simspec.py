@@ -1,4 +1,7 @@
-'''simulate absorption cross section spectrum made up of one or more lines'''
+'''popmodule module to simulate absorption cross section spectrum.
+
+Spectrum can be made up of one or more lines.
+'''
 # modules within package
 from . import ohcalcs as oh
 
@@ -10,11 +13,11 @@ from scipy.constants import k
 from scipy.constants import c, pi
 import logging
 
-logger = logging.getLogger('popmodel.simspec')
+LOGGER = logging.getLogger('popmodel.simspec')
 
 def dornvoigt(wc, wd, wnum):
     '''use Eq 13 in Dorn et al. to calculate voigt profile
-    
+
     Parameters
     ----------
     wc : float
@@ -40,7 +43,7 @@ def dornvoigt(wc, wd, wnum):
 
     # set up array of wavelengths to calculate profile over
     width = 20. # pm
-    xarr = np.linspace(wlength-width,wlength+width,1.e3) # pm
+    xarr = np.linspace(wlength-width, wlength+width, 1.e3) # pm
     xstep = xarr[1]-xarr[0] # pm
 
     # delta is 'normalized wavelength' to Voigt width wv
@@ -54,19 +57,19 @@ def dornvoigt(wc, wd, wnum):
     F2 = (wc/wv) / (1+4*delta**2)
     F3 = 0.016*(1.-wc/wv)*(wc/wv)\
             * (np.exp(-.04*np.abs(delta)**2.25)-10/(10+np.abs(delta)**2.25))
-    voigt = F1 + F2 + F3
+    raw_voigt = F1 + F2 + F3
 
     # normalize so that area under F is zero:
     av = 1.065 + 0.447*wc/wv + 0.058*(wc/wv)**2 # lineshape factor approx, Dorn
     norm_factor = 1/(2*wv*av) # see Dorn Eq 10
-    voigt_norm = voigt*norm_factor
+    voigt_norm = raw_voigt*norm_factor
     areaplotted = voigt_norm.sum() * xstep
     if areaplotted < 0.9:
-        logger.warning('Warning: profile contains <90% of total area: {}'
+        LOGGER.warning('Warning: profile contains <90% of total area: {}'
                        .format(areaplotted))
-    return xarr,voigt_norm
+    return xarr, voigt_norm
 
-def voigt(xarr,amp,xcen,wc,wd,normalized):
+def voigt(xarr, amp, xcen, wc, wd, normalized):
     """
     *modified version for quality control purposes -- comparison to dornvoigt*
 
@@ -121,9 +124,9 @@ def voigt(xarr,amp,xcen,wc,wd,normalized):
     else:
         return V
 
-def simline(hitline,xarr=None,press=oh.op_press,T=oh.temp):
+def simline(hitline, xarr=None, press=oh.OP_PRESS, T=oh.TEMP):
     '''Calculate simulated absorption spectrum for a single HITRAN line.
-    
+
     Follow treatment in Dorn et al., J Geophys Res 100 (D4), 7397-7409, 1995.
     Represent absorption cross section spectrum as a product of (1) the total
     integrated absorption cross-section sigma_tot, (2) relative population
@@ -166,11 +169,11 @@ def simline(hitline,xarr=None,press=oh.op_press,T=oh.temp):
 
     # (1) Calculate lineshape, in Hz domain, area normalized to 1:
     # Gaussian std dev for Doppler
-    sigma = (k*T/(oh.mass*c**2))**(0.5) * freq
+    sigma = (k*T/(oh.MASS*c**2))**(0.5) * freq
 
     # air-broadened HWHM at 296K, HITRAN (converted from cm^-1 atm^-1)
     # Could correct for temperature -- see Dorn et al. Eq 17
-    gamma=(g_air*c*100) * press/760. # Lorentzian parameter
+    gamma = (g_air*c*100) * press/760. # Lorentzian parameter
 
     # come up with xarr values if none passed to function
     if xarr == None:
@@ -178,9 +181,10 @@ def simline(hitline,xarr=None,press=oh.op_press,T=oh.temp):
         wd = sigma * np.sqrt(2*np.log(2)) # doppler half-width, Wikipedia
         wv = wc/2+np.sqrt(wc**2/4+wd**2) # voigt hw approx of Whiting 1968
         width = 40 * wv # 40 of the approximate half-widths
-        xarr = np.linspace(freq-width,freq+width,1.e3) # hard-code 1000 points
+        # hard-code 1000 points
+        xarr = np.linspace(freq-width, freq+width, 1.e3)
 
-    lineshape = oh.voigt(xarr,1.,freq,sigma,gamma,True)
+    lineshape = oh.voigt(xarr, 1., freq, sigma, gamma, True)
 
     # (2) calculate pop density
     # use HITRAN values for J, E_low; determine Qrot with parameterization
@@ -190,7 +194,7 @@ def simline(hitline,xarr=None,press=oh.op_press,T=oh.temp):
 
     # (3) total integrated absorption cross-section, cm^2
     # use Eq 3 in Dorn et al., using c in cm for result in cm^2
-    sigma_tot=(1/(8*pi*c*100*wnum**2)*(2*Jb+1)/(2*Ja+1)*Aba) # cm^2
+    sigma_tot = (1/(8*pi*c*100*wnum**2)*(2*Jb+1)/(2*Ja+1)*Aba) # cm^2
     # or Table 2.2 in Demtroeder p 41:
     # sigma_ij = (gj/gi)*c**2/(8*freq**2*d_freq) * Aji
     # sigma_tot = integrate sigma_ij d_freq
@@ -202,12 +206,12 @@ def simline(hitline,xarr=None,press=oh.op_press,T=oh.temp):
     sigma_eff = popdens * sigma_tot * lineshape # Dorn et al, Eq 7
     lineseries = pd.Series(sigma_eff, index=xarr)
     # cut off first and last entry to zero to avoid interpolation error later
-    lineseries.iloc[0]=0
-    lineseries.iloc[-1]=0
+    lineseries.iloc[0] = 0
+    lineseries.iloc[-1] = 0
     lineseries.index.name = "Frequency, Hz"
     return lineseries
 
-def simspec(hitlines,press=oh.op_press,T=oh.temp):
+def simspec(hitlines, press=oh.OP_PRESS, T=oh.TEMP):
     '''Combine set of hitlines into spectrum, as pandas DataFrame.
 
     Call `simline` for each entry in input, without specifying frequency range
@@ -216,7 +220,7 @@ def simspec(hitlines,press=oh.op_press,T=oh.temp):
     one pandas DataFrame object. Interpolate up to 5 consecutive NaN values in
     each line, which can arise from overlapping lines. Then return the
     DataFrame.
-    
+
     The DataFrame index is a combination of all frequency values used for all
     the lines, but the DataFrame is very sparse, saving on memory.
 
@@ -235,7 +239,7 @@ def simspec(hitlines,press=oh.op_press,T=oh.temp):
     '''
     linedict = {}
     for line in hitlines:
-        linedict.update({line.label:simline(line,None,press,T)})
+        linedict.update({line.label: simline(line, None, press, T)})
     specdata = pd.DataFrame(linedict)
     specdata.interpolate(method='linear', limit=5, inplace=True)
     return specdata
@@ -245,11 +249,11 @@ def makeindexnm(specdata):
     '''
     nmindex = c/specdata.index.values*1e9
     specdata_nm = pd.DataFrame(data=specdata.values, index=nmindex,
-            columns=specdata.columns)
+                               columns=specdata.columns)
     specdata_nm.sort_index(inplace=True)
     return specdata_nm
 
-def specToCSV(csvfile,specdata):
+def spectocsv(csvfile, specdata):
     '''write given specdata DataFrame to a csv file
 
     Parameters:
@@ -262,7 +266,7 @@ def specToCSV(csvfile,specdata):
     '''
     specdata.to_csv(csvfile)
 
-def csvToSpec(csvfile):
+def csvtospec(csvfile):
     '''Return data saved to a CSV file as a DataFrame.
 
     Parameters

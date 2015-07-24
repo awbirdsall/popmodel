@@ -230,7 +230,7 @@ class KineticsRun(object):
                                   width=sweep['width'],
                                   binwidth=sweep['binwidth'],
                                   factor=sweep['factor'],
-                                  keepTsweep=sweep['keepTsweep'],
+                                  keeptsweep=sweep['keeptsweep'],
                                   keepwidth=sweep['keepwidth'])
             self.sweep.avg_step_in_bin = sweep['avg_step_in_bin']
             # Average number of integration steps to spend in each frequency
@@ -289,10 +289,10 @@ class KineticsRun(object):
         # same rot level of interest in 'c' and 'd'
         self.uvline['Nd'] = self.uvline['Nc']
 
-        # For now, use calculateUV to lookup uvline wavelength
+        # For now, use calculateuv to lookup uvline wavelength
         # TODO account for whether uv line is ca, cb, or db.
         # TODO also account for Q_1 vs Q_12, etc.?
-        self.uvline['wnum_uv'] = oh.calculateUV(self.uvline['Nc'],
+        self.uvline['wnum_uv'] = oh.calculateuv(self.uvline['Nc'],
                                                 self.hline['wnum_ab'],
                                                 self.hline['E_low'])
         
@@ -300,9 +300,9 @@ class KineticsRun(object):
         # Assuming same Acb regardless of b and c rotational level or whether
         # UV is to c or d. Could do better looking at a dictionary of A values
         # TODO Determine whether to use Acb, Aca or Adb as base Einstein coeff.
-        vbc = atm.wavenum_to_Hz*self.uvline['wnum_uv']
-        self.rates['Bcb'] = oh.b21(oh.Acb, vbc)
-        self.rates['Bbc'] = oh.b12(oh.Acb, self.hline['gb'], oh.gc, vbc)
+        vbc = atm.WAVENUM_TO_HZ*self.uvline['wnum_uv']
+        self.rates['Bcb'] = oh.b21(oh.ACB, vbc)
+        self.rates['Bbc'] = oh.b12(oh.ACB, self.hline['gb'], oh.GC, vbc)
 
     def makerotfracarray(self):
         '''Make KineticsRun.rotfrac array of equilibrium rotational pops.
@@ -318,10 +318,10 @@ class KineticsRun(object):
             f_b = f_a
         else:
             f_b = int(self.hline['label'][3]) - 1
-        self.rotfrac = np.array([oh.rotfrac['a'][f_a][self.hline['Na']-1],
-                                 oh.rotfrac['b'][f_b][self.hline['Nb']-1],
-                                 oh.rotfrac['c'][self.uvline['Nc']],
-                                 oh.rotfrac['d'][self.uvline['Nd']]])
+        self.rotfrac = np.array([oh.ROTFRAC['a'][f_a][self.hline['Na']-1],
+                                 oh.ROTFRAC['b'][f_b][self.hline['Nb']-1],
+                                 oh.ROTFRAC['c'][self.uvline['Nc']],
+                                 oh.ROTFRAC['d'][self.uvline['Nd']]])
 
     def makeAbs(self):
         '''Make an absorption profile using self.hline and experimental
@@ -485,7 +485,7 @@ class KineticsRun(object):
             self.makeAbs()
             
             # Align bins for IR laser and absorbance features for integration
-            self.sweep.alignBins(self.abfeat)
+            self.sweep.alignbins(self.abfeat)
 
             # avg_bintime calced for 'sin'. 'saw' twice as long.
             avg_bintime = (self.sweep.tsweep /

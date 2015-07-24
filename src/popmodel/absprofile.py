@@ -26,14 +26,20 @@ class AbsProfile(object):
         self.wnum = wnum # cm^-1
         self.freq = wnum*c*100 # Hz
         self.binwidth = binwidth # Hz
+        # instance attributes calculated in makeprofile
+        self.abs_freq = None
+        self.pop = None
+        # intpop calculated in Sweep.alignbins() call
+        self.intpop = None
 
     def __str__(self):
         return 'Absorbance feature centered at '+str(self.wnum)+' cm^-1'
 
-    def makeprofile(self, abswidth=1000.e6, press=oh.op_press, T=oh.temp,
-                    g_air=oh.g_air, mass=oh.mass):
-        '''
-        Use oh.voigt func to create IR profile as self.abs_freq and self.pop.
+    def makeprofile(self, abswidth=1000.e6, press=oh.OP_PRESS, T=oh.TEMP,
+                    g_air=oh.G_AIR, mass=oh.MASS):
+        ''' Use oh.voigt to create absorption profile.
+
+        Writes to self.abs_freq and self.pop.
 
         Parameters:
         -----------
@@ -62,8 +68,8 @@ class AbsProfile(object):
         # More correctly, correct for temperature -- see Dorn et al. Eq 17
 
         # Make abs_freq profile, checking pop at edge <1% of peak
-        enoughWidth = False
-        while enoughWidth == False:
+        enoughwidth = False
+        while enoughwidth == False:
             abs_freq = np.arange(-abswidth/2,
                                  abswidth/2+self.binwidth,
                                  self.binwidth)
@@ -73,14 +79,14 @@ class AbsProfile(object):
             if pop[0] >= 0.01*np.max(pop):
                 abswidth = abswidth*1.5
             else:
-                enoughWidth = True
+                enoughwidth = True
         self.abs_freq = abs_freq
         self.pop = pop
         startfwhm = abs_freq[pop >= np.max(pop)*0.5][0]
         endfwhm = abs_freq[pop >= np.max(pop)*0.5][-1]
         fwhm = endfwhm - startfwhm
         self.logger.info('makeprofile: made abs profile')
-        self.logger.info('makeprofile: abs profile has FWHM = {:.2g} MHz'
-                         .format(fwhm/1e6))
-        self.logger.info('makeprofile: total width of stored array = {:.2g} MHz'
-                         .format(abswidth/1e6))
+        self.logger.info('makeprofile: abs profile has FWHM = %.2g MHz',
+                         fwhm/1e6)
+        self.logger.info('makeprofile: total width of stored array = %.2g MHz',
+                         abswidth/1e6)
