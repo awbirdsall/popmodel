@@ -123,4 +123,4 @@ class Sweep(object):
         self.part_swept = np.sum(abfeat.intpop)
         self.logger.info('alignbins: region swept by IR beam represents '
                          '%.1f%% of feature\'s total population',
-                         self.part_swept)
+                         self.part_swept*100)
