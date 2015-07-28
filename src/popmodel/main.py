@@ -44,24 +44,24 @@ except ImportError:
 LOGGER = logging.getLogger('popmodel')
 LOGGER.setLevel(logging.WARNING)
 def add_streamhandler():
-    '''Add StreamHandler `ch` to LOGGER.
+    '''Add StreamHandler to LOGGER.
     '''
     LOGGER.setLevel(logging.INFO)
-    ch = logging.StreamHandler()
-    ch.setLevel(logging.INFO)
+    streamhandler = logging.StreamHandler()
+    streamhandler.setLevel(logging.INFO)
     formatter = logging.Formatter('%(levelname)s:%(name)s:%(message)s')
-    ch.setFormatter(formatter)
-    LOGGER.addHandler(ch)
+    streamhandler.setFormatter(formatter)
+    LOGGER.addHandler(streamhandler)
 
 def add_filehandler(logfile):
-    '''Add FileHandler `fh` to LOGGER, with output to `logfile`.
+    '''Add FileHandler to LOGGER, with output to `logfile`.
     '''
-    fh = logging.FileHandler(logfile)
-    fh.setLevel(logging.INFO)
+    filehandler = logging.FileHandler(logfile)
+    filehandler.setLevel(logging.INFO)
     logfile_formatter = logging.Formatter('%(asctime)s:%(levelname)s:'
                                           '%(name)s:%(message)s')
-    fh.setFormatter(logfile_formatter)
-    LOGGER.addHandler(fh)
+    filehandler.setFormatter(logfile_formatter)
+    LOGGER.addHandler(filehandler)
 
 def importyaml(parfile):
     '''Extract nested dict of parameters from yaml file.
@@ -69,8 +69,8 @@ def importyaml(parfile):
     See sample parameters.yaml file for full structure. Top-level keys are
     irlaser,sweep,uvlaser,odepar,irline,uvline,detcell,rates
     '''
-    with open(parfile, 'r') as f:
-        par = yaml.load(f, Loader=Loader)
+    with open(parfile, 'r') as yamlfile:
+        par = yaml.load(yamlfile, Loader=Loader)
     return par
 
 def automate(hitfile, parameters, logfile=None, csvout=None, image=None,
@@ -84,18 +84,18 @@ def automate(hitfile, parameters, logfile=None, csvout=None, image=None,
     # log each output filename
     argdict = {"log file": logfile, "output csv": csvout,
                "output png image":image}
-    for (k, v) in argdict.iteritems():
-        if v:
-            LOGGER.info('saving '+k+' to '+v)
+    for (outputtype, outputfile) in argdict.iteritems():
+        if outputfile is not None:
+            LOGGER.info('saving '+outputtype+' to '+outputfile)
 
     par = importyaml(parameters)
     hpar = loadhitran.processhitran(hitfile)
-    k = KineticsRun(hpar, **par)
-    k.solveode()
+    kineticsrun = KineticsRun(hpar, **par)
+    kineticsrun.solveode()
     if csvout:
-        k.savecsv(csvout)
+        kineticsrun.savecsv(csvout)
     if image:
-        k.popsfigure().savefig(image)
+        kineticsrun.popsfigure().savefig(image)
 
 ##############################################################################
 
@@ -244,6 +244,25 @@ class KineticsRun(object):
             self.sweep = lambda: None
             self.sweep.las_bins = np.zeros(1)
 
+        # AbsProfile instance made by self.makeabs(), which is called by
+        # solveode() if self.dosweep=True
+        self.abfeat = None
+
+        # Instance attributes set up within KineticsRun.solveode():
+        # times at which solveode() integration is calculated, s.
+        self.tbins = None
+        # Index of self.tbins reached by integration progress.
+        self.time_progress = None
+        # Static array describing sweep in infrared laser frequency with time.
+        self.sweepfunc = None
+        # compact array of integrated population dynamics, with two entries
+        # within each vibronic level (within/without rot level of interest).
+        self.abcpop = None
+        # full array of integrated bins
+        if self.odepar['keepN']:
+            self.N = None
+            self.N0 = None
+
         # extract invariant kinetics parameters
         self.rates = rates
         # overwrite following subdictionaries for appropriate format for dN:
@@ -354,12 +373,10 @@ class KineticsRun(object):
         Average fluorescence rate over time interval, photons/s.
         '''
 
-        try:
-            getattr(self, 'N')
-        except:
-            raise NameError('KineticsRun instance does not have `N`. Need to '
-                            'have run KineticsRun.solveode() with '
-                            'KineticsRun.odepar[\'keepN\'] = True')
+        if self.N is None:
+            raise AttributeError('KineticsRun instance does not have `N`. '
+                                 'Need to have run KineticsRun.solveode() '
+                                 'with KineticsRun.odepar[\'keepN\'] = True.')
 
         # Fluorescence does not apply if the only levels are in the electronic
         # ground state.
@@ -582,8 +599,8 @@ class KineticsRun(object):
         self.logger.info('----------------------')
 
         # Solve ODE
-        self.time_progress = 0 # laspos looks at this to choose sweepfunc index.
-        old_complete = 0 # tracks integration progress for self.logger
+        self.time_progress = 0 # laspos looks at this to choose sweepfunc index
+        old_complete = 0 # track integration progress for self.logger
         while r.successful() and r.t < tl-dt:
             # display progress
             complete = r.t/tl
@@ -649,18 +666,6 @@ class KineticsRun(object):
         # For calculations within dN, reshape y back into 2D form of N
         y = y.reshape(self.nlevels, -1)
 
-        # laser intensities accounting for pulsing
-        Lir = intensity(t, self.irlaser)
-        Luv = intensity(t, self.uvlaser)
-
-        # Represent position of IR laser with Lir_sweep
-        if self.dosweep:
-            voigt_pos = self.laspos()
-        else: # laser always at single bin representing entire line
-            voigt_pos = 0
-        Lir_sweep = np.zeros(self.sweep.las_bins.size + 3)
-        Lir_sweep[voigt_pos] = Lir
-
         # calculate fdist and fdist_lambda, distribution *within* single
         # rotational level or lambda level that is relaxed to
         if self.odepar['redistequil']:
@@ -680,65 +685,65 @@ class KineticsRun(object):
         else:
             fdist_array = np.zeros((y.shape[0], y.shape[1] - 1))
 
-        '''To implement: cleaner implementation of 'internal' processes
+        # TODO: cleaner implementation of 'internal' processes
 
-        # within dN
-        if self.solveode['rotequil']:
-            rotarray = self.rotprocesses(y, t)
-        else:
-            rotarray = np.zeros_like(y)
-        if self.solveode['lambdaequil']:
-            lambdaarray = self.lambdaprocesses(y, t)
-        else:
-            lambdaarray = np.zeros_like(y)
-        internalarray = rotarray + lambdaarray
-        ratearray = vibronicarray + internalarray
-        return ratearray
+        # # within dN
+        # if self.solveode['rotequil']:
+        #     rotarray = self.rotprocesses(y, t)
+        # else:
+        #     rotarray = np.zeros_like(y)
+        # if self.solveode['lambdaequil']:
+        #     lambdaarray = self.lambdaprocesses(y, t)
+        # else:
+        #     lambdaarray = np.zeros_like(y)
+        # internalarray = rotarray + lambdaarray
+        # ratearray = vibronicarray + internalarray
+        # return ratearray
 
-        def lambdaprocesses(self, y, t):
-            levellambdarates = []
-            for level in self.system:
-                if level.term == 'pi':
-                    levelrate = makeinternalrate('lambda')
-                elif level.term == 'sigma':
-                    levelrate = np.zeros_like(level)
-                levellambdarates.append(levelrate)
-            return np.vstack(levellambdarates)
+        # def lambdaprocesses(self, y, t):
+        #     levellambdarates = []
+        #     for level in self.system:
+        #         if level.term == 'pi':
+        #             levelrate = makeinternalrate('lambda')
+        #         elif level.term == 'sigma':
+        #             levelrate = np.zeros_like(level)
+        #         levellambdarates.append(levelrate)
+        #     return np.vstack(levellambdarates)
 
-        def rotprocesses(self, y, t):
-            levelrotrates = []
-            for level in self.system:
-                if level.term == 'pi':
-                    levelrate = makeinternalrate('rot_pi')
-                elif level.term == 'sigma':
-                    levelrate = makeinternalrate('rot_sigma')
-            return np.vstack(levelrotrates)                    
+        # def rotprocesses(self, y, t):
+        #     levelrotrates = []
+        #     for level in self.system:
+        #         if level.term == 'pi':
+        #             levelrate = makeinternalrate('rot_pi')
+        #         elif level.term == 'sigma':
+        #             levelrate = makeinternalrate('rot_sigma')
+        #     return np.vstack(levelrotrates)
 
-        def self.makeinternalrate(ratetype, yl, equildist):
-            internalrate = np.zeros_like(yl)
-            baserate = internal_dict[ratetype][0]
-            ratecoeff = internal_dict[ratetype][1]
-            startrng = getrange(internal_dict[ratetype][2])
-            endrng = getrange(internal_dict[ratetype][3])
-            individuatedrates = (- yl[startrng] * baserate + yl[rngout]
-                * baserate_reverse * equildist)
-            internalrate[startrng] = individuatedrates
-            internalrate[endrng] = -individuatedrates.sum()
-            return internalrate
+        # def self.makeinternalrate(ratetype, yl, equildist):
+        #     internalrate = np.zeros_like(yl)
+        #     baserate = INTERNAL_DICT[ratetype][0]
+        #     ratecoeff = INTERNAL_DICT[ratetype][1]
+        #     startrng = getrange(INTERNAL_DICT[ratetype][2])
+        #     endrng = getrange(INTERNAL_DICT[ratetype][3])
+        #     individuatedrates = (- yl[startrng] * baserate + yl[rngout]
+        #         * baserate_reverse * equildist)
+        #     internalrate[startrng] = individuatedrates
+        #     internalrate[endrng] = -individuatedrates.sum()
+        #     return internalrate
 
-internal_dict = {'rot_pi':[self.rates.rr,
-                           'quencher',
-                           'rot_level',
-                           'rot_other'],
-                 'rot_sigma':[self.rates.rr,
-                              'quencher',
-                              'lambda_half',
-                              'rot_other'],
-                 'lambda':[self.rates.lambda,
-                           'quencher',
-                           'lambda_half',
-                           'lambda_other']}
-        '''
+# INTERNAL_DICT = {'rot_pi':[self.rates.rr,
+        #                    'quencher',
+        #                    'rot_level',
+        #                    'rot_other'],
+        #          'rot_sigma':[self.rates.rr,
+        #                       'quencher',
+        #                       'lambda_half',
+        #                       'rot_other'],
+        #          'lambda':[self.rates.lambda,
+        #                    'quencher',
+        #                    'lambda_half',
+        #                    'lambda_other']}
+
         # generate rates for each process
         # vibronic rates
         vibroniclist = self.vibronicprocesses(y, t)
@@ -748,9 +753,9 @@ internal_dict = {'rot_pi':[self.rates.rr,
         rrin = self.rates['rrout'] * self.rotfrac / (1 - self.rotfrac)
         rrates = np.array([self.rates['rrout'], rrin]).T
         if self.odepar['rotequil']:
-            rrvalues = np.vstack([internalrate(yl, r * self.detcell['Q'], dist,
-                                  'rot') for yl, r, dist in zip(y, rrates,
-                                                                fdist_array)])
+            rrvalues = np.vstack([
+                internalrate(yl, r * self.detcell['Q'], dist, 'rot')
+                for yl, r, dist in zip(y, rrates, fdist_array)])
         else:
             rrvalues = np.zeros_like(y)
 
@@ -827,18 +832,18 @@ internal_dict = {'rot_pi':[self.rates.rr,
         Calculated array of rates, with same shape as y.
         '''
         rarray = np.zeros_like(y)
-        startlevel = self.startlevel_lookup(process)
-        startrng = self.getrngidx(getstartrng(process))()
-        endlevel = self.endlevel_lookup(process)
-        endrng = self.getrngidx(getendrng(process))()
+        startlevel_idx = self.startlevel_lookup(process)
+        startrng_idx = self.getrngidx(getstartrng(process))()
+        endlevel_idx = self.endlevel_lookup(process)
+        endrng_idx = self.getrngidx(getendrng(process))()
 
         base = self.baserate_k(process)
         coeff = self.ratecoeff(coefftype(process), t)
-        conc = y[startlevel, startrng]
+        conc = y[startlevel_idx, startrng_idx]
         rate = base*coeff*conc
         # for vibronic process, startrng = endrng
-        rarray[startlevel, startrng] = -rate
-        rarray[endlevel, endrng] = rate
+        rarray[startlevel_idx, startrng_idx] = -rate
+        rarray[endlevel_idx, endrng_idx] = rate
         return rarray
 
     def included(self, proc):
@@ -893,6 +898,10 @@ internal_dict = {'rot_pi':[self.rates.rr,
         are plotted in ax0, with the left y-axis scale. Subpops in 'c' and 'd'
         are plotted in ax1, with the right y-axis scale.
         '''
+        if self.N is None:
+            raise AttributeError('KineticsRun instance does not have `N`. '
+                                 'Need to have run KineticsRun.solveode() with '
+                                 'KineticsRun.odepar[\'keepN\'] = True')
 
         fig, (ax0) = plt.subplots()
 
@@ -940,6 +949,11 @@ internal_dict = {'rot_pi':[self.rates.rr,
     def popseries(self, plotcode):
         '''calculate 1D array describing timeseries of subpopulation.
         '''
+        if self.N is None:
+            raise AttributeError('KineticsRun instance does not have `N`. '
+                                 'Need to have run KineticsRun.solveode() with '
+                                 'KineticsRun.odepar[\'keepN\'] = True')
+
         # add default if second or third character of plotcode blank
         if len(plotcode) == 3:
             pass
@@ -999,10 +1013,10 @@ internal_dict = {'rot_pi':[self.rates.rr,
         pngout : str
         filename to save PNG output. Displays plot if not given.
         '''
-        if hasattr(self, 'abcpop') == False and hasattr(self, 'N') == False:
-            self.logger.warning('need to run solveode first!')
-            return
-        elif hasattr(self, 'abcpop') == False and self.odepar['keepN']:
+        if self.abcpop is None and self.N is None:
+            raise AttributeError('Need to have run KineticsRun.solveode()')
+
+        elif self.abcpop is None and self.odepar['keepN']:
             self.abcpop = np.empty((np.size(self.tbins), self.nlevels, 2))
             self.abcpop[:, :, 0] = self.N[:, :, 0:-2].sum(2)
             self.abcpop[:, :, 1] = self.N[:, :, -2:].sum(2)
@@ -1039,6 +1053,11 @@ internal_dict = {'rot_pi':[self.rates.rr,
         Whether to plot the edges of where the laser sweeps. Requires the
         KineticsRun instance to have a Sweep with self.sweep.las_bins array.
         '''
+        if self.abfeat is None:
+            raise AttributeError("KineticsRun instance missing abfeat. "
+                                 "Requires KineticsRun.solveode() to have "
+                                 "been run with dosweep = True")
+
         fig, (ax0) = plt.subplots(nrows=1)
         ax0.plot(self.abfeat.abs_freq/1e6, self.abfeat.pop)
         ax0.set_title('Calculated absorption feature, '
@@ -1057,7 +1076,10 @@ internal_dict = {'rot_pi':[self.rates.rr,
         first column is time, next three columns are populations of a, b and
         c in state of interest.'''
 
-        if hasattr(self, 'abcpop') == False and hasattr(self, 'N') == True:
+        if self.abcpop is None and self.N is None:
+            raise AttributeError('Need to have run KineticsRun.solveode()')
+
+        if self.abcpop is None and hasattr(self, 'N') == True:
             self.abcpop = np.empty((np.size(self.tbins), self.nlevels, 2))
             self.abcpop[:, :, 0] = self.N[:, :, 0:-2].sum(2)
             self.abcpop[:, :, 1] = self.N[:, :, -2:].sum(2)
@@ -1077,6 +1099,15 @@ internal_dict = {'rot_pi':[self.rates.rr,
         file : str
         Path of file to save output (.npz extension standard).
         '''
+
+        if self.abcpop is None and self.N is None:
+            raise AttributeError('Need to have run KineticsRun.solveode()')
+
+        if self.abcpop is None and hasattr(self, 'N') == True:
+            self.abcpop = np.empty((np.size(self.tbins), self.nlevels, 2))
+            self.abcpop[:, :, 0] = self.N[:, :, 0:-2].sum(2)
+            self.abcpop[:, :, 1] = self.N[:, :, -2:].sum(2)
+
         np.savez(npzfile,
                  abcpop=self.abcpop,
                  las_bins=self.sweep.las_bins,
@@ -1101,7 +1132,7 @@ internal_dict = {'rot_pi':[self.rates.rr,
             self.sweep.las_bins = data['las_bins']
             self.tbins = data['tbins']
             self.sweepfunc = data['sweepfunc']
-            self.abfeat = Abs(0)
+            self.abfeat = ap.AbsProfile(wnum=self.hline['wnum_ab'])
             self.abfeat.abs_freq = data['abs_freq']
             self.abfeat.pop = data['pop']
 
@@ -1119,11 +1150,11 @@ internal_dict = {'rot_pi':[self.rates.rr,
         '''
         return self.levels[endlevel(ratetype)]
 
-def _getnested(keys, d):
+def _getnested(keys, nesteddict):
     '''Access data in nested dict using a list of keys.'''
     if not isinstance(keys, list): # handle single key
         keys = [keys]
-    return reduce(dict.__getitem__, keys, d)
+    return reduce(dict.__getitem__, keys, nesteddict)
 
 ###############################################################################
 # GLOBAL VARS
@@ -1242,38 +1273,39 @@ def getendrng(ratetype):
     '''
     return VIBRONICDICT[ratetype][5]
 
-def intensity(t, laser):
+def intensity(timearray, laser):
     '''Calculate spec intensity of laser at given array of times.
 
     Assumes total integration time less than rep rate.
     '''
-    t = np.asarray(t)
+    timearray = np.asarray(timearray)
     scalar_input = False
-    if t.ndim == 0:
-        t = t[None] # convert to 1D
+    if timearray.ndim == 0:
+        timearray = timearray[None] # convert to 1D
         scalar_input = True
-    L = np.zeros_like(t)
+    intensities = np.zeros_like(timearray)
     area = np.pi*(laser['diam']*0.5)**2
     spec_intensity = oh.spec_intensity(laser['power'],
                                        area,
                                        laser['bandwidth'])
     if not laser['pulse']:
-        L.fill(spec_intensity)
+        intensities.fill(spec_intensity)
     else:
-        whenon = (t > laser['delay']) & (t < laser['pulse']+laser['delay'])
-        L[whenon] = spec_intensity
+        whenon = ((timearray > laser['delay']) & 
+                  (timearray < laser['pulse']+laser['delay']))
+        intensities[whenon] = spec_intensity
 
     if scalar_input:
-        return np.squeeze(L)
-    return L
+        return np.squeeze(intensities)
+    return intensities
 
-def internalrate(yl, ratecon, equildist, ratetype):
+def internalrate(ylevel, ratecon, equildist, ratetype):
     '''calculate contribution to overall rate array for process
     internal to single a/b/c level with equilibrium distribution.
 
     Parameters
     ----------
-    yl : array
+    ylevel : array
     1D array of population in single a/b/c level. Assumes consistent format of
     (bins within lambda doublet), lambda doublet, other rotational levels.
     ratecon : list (length 2)
@@ -1288,7 +1320,7 @@ def internalrate(yl, ratecon, equildist, ratetype):
     term : np.ndarray
     2D array shaped like y containing rates for process
     '''
-    term = np.zeros_like(yl)
+    term = np.zeros_like(ylevel)
     if ratetype == 'rot':
         rngin = np.s_[0:-1]
         rngout = np.s_[-1]
@@ -1298,10 +1330,11 @@ def internalrate(yl, ratecon, equildist, ratetype):
     else:
         ValueError('ratetype needs to be \'rot\' or \'lambda\'')
 
-    if yl[rngin].sum() != 0:
-        term[rngin] = (-yl[rngin] * ratecon[0] +
-                       yl[rngout] * ratecon[1] * equildist)
-        term[rngout] = yl[rngin].sum() * ratecon[0] - yl[rngout] * ratecon[1]
+    if ylevel[rngin].sum() != 0:
+        term[rngin] = (-ylevel[rngin] * ratecon[0] +
+                       ylevel[rngout] * ratecon[1] * equildist)
+        term[rngout] = (ylevel[rngin].sum() * ratecon[0] -
+                        ylevel[rngout] * ratecon[1])
     else:
         term.fill(0)
     return term

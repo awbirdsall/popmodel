@@ -55,8 +55,8 @@ def dornvoigt(wc, wd, wnum):
     # numbers. To avoid getting NaN, take absolute value of delta first
     F1 = (1-wc/wv) * np.exp(-4*np.log(2)*delta**2)
     F2 = (wc/wv) / (1+4*delta**2)
-    F3 = 0.016*(1.-wc/wv)*(wc/wv)\
-            * (np.exp(-.04*np.abs(delta)**2.25)-10/(10+np.abs(delta)**2.25))
+    F3 = (0.016*(1.-wc/wv)*(wc/wv) *
+          (np.exp(-.04*np.abs(delta)**2.25)-10/(10+np.abs(delta)**2.25)))
     raw_voigt = F1 + F2 + F3
 
     # normalize so that area under F is zero:
@@ -65,8 +65,8 @@ def dornvoigt(wc, wd, wnum):
     voigt_norm = raw_voigt*norm_factor
     areaplotted = voigt_norm.sum() * xstep
     if areaplotted < 0.9:
-        LOGGER.warning('Warning: profile contains <90% of total area: {}'
-                       .format(areaplotted))
+        LOGGER.warning('Warning: profile contains <90% of total area: %3d',
+                       areaplotted)
     return xarr, voigt_norm
 
 def voigt(xarr, amp, xcen, wc, wd, normalized):

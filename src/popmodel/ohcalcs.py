@@ -243,13 +243,13 @@ def b21(a21, freq):
 
     Returns
     -------
-    b21 : float (or 1D numpy array)
+    b21_coeff : float (or 1D numpy array)
     Einstein B coefficient for stimulated emission, m^2 J^-1 s^-1.
     '''
-    b21 = a21 * c**2 / (8. * m.pi * h * freq**3)
-    return b21
+    b21_coeff = a21 * c**2 / (8. * m.pi * h * freq**3)
+    return b21_coeff
 
-def b12(a21, g1, g2, freq):
+def b12(a21, g_lower, g_upper, freq):
     '''
     Calculate Einstein coefficient for absorption from A coefficient.
 
@@ -257,7 +257,7 @@ def b12(a21, g1, g2, freq):
     ----------
     a21: float (or 1D numpy array)
     Einstein A coefficient for spontaneous emission, s^-1.
-    g1, g2: float (or 1D numpy array)
+    g_lower, g_upper: float (or 1D numpy array)
     Degeneracies of lower and upper states. Function converts g's to float
     to avoid high likelihood of int division.
     freq : float (or 1D numpy array)
@@ -268,8 +268,10 @@ def b12(a21, g1, g2, freq):
     b12 : float (or 1D numpy array)
     Einstein B coefficient for absorption, m^2 J^-1 s^-1.
     '''
-    b12 = np.array(g1).astype(float)/np.array(g2).astype(float) * b21(a21, freq)
-    return b12
+    b12_coeff = (np.array(g_lower).astype(float)/
+                 np.array(g_upper).astype(float) *
+                 b21(a21, freq))
+    return b12_coeff
 
 def fwhm_doppler(nu, temp, mass):
     '''

@@ -62,6 +62,30 @@ def test_raise_error_popsfigure_without_N(k):
     with pytest.raises(AttributeError):
         k.popsfigure()
 
+def test_raise_error_popseries_without_N(k):
+    with pytest.raises(AttributeError):
+        k.popseries('b')
+
+def test_raise_error_calcfluor_without_N(k):
+    with pytest.raises(AttributeError):
+        k.calcfluor()
+
+def test_raise_error_vslaserfigure_without_N(k):
+    with pytest.raises(AttributeError):
+        k.vslaserfigure(lambda x: 'dummy arg')
+
+def test_raise_error_savecsv_without_N(k):
+    with pytest.raises(AttributeError):
+        k.savecsv('does_not_reach_output')
+
+def test_raise_error_saveoutput_without_N(k):
+    with pytest.raises(AttributeError):
+        k.saveoutput('does_not_reach_output')
+
+def test_raise_error_absfigure_without_abfeat(k_solved):
+    with pytest.raises(AttributeError):
+        k.absfigure()
+
 @pytest.mark.mpl_image_compare
 def test_popsfigure_plots_suite_of_subpop_popcodes(k_solved):
     return k_solved.popsfigure(subpop=['ahd','bsl','clp','dda','b'])
