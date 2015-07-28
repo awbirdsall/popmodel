@@ -58,27 +58,27 @@ def test_KineticsRun_instance_has_attributes(k):
     assert hasattr(k, 'uvline')
     assert hasattr(k, 'rates')
 
-def test_raise_error_popsfigure_without_N(k):
+def test_raise_error_popsfigure_without_pop_full(k):
     with pytest.raises(AttributeError):
         k.popsfigure()
 
-def test_raise_error_popseries_without_N(k):
+def test_raise_error_popseries_without_pop_full(k):
     with pytest.raises(AttributeError):
         k.popseries('b')
 
-def test_raise_error_calcfluor_without_N(k):
+def test_raise_error_calcfluor_without_pop_full(k):
     with pytest.raises(AttributeError):
         k.calcfluor()
 
-def test_raise_error_vslaserfigure_without_N(k):
+def test_raise_error_vslaserfigure_without_pop_full(k):
     with pytest.raises(AttributeError):
         k.vslaserfigure(lambda x: 'dummy arg')
 
-def test_raise_error_savecsv_without_N(k):
+def test_raise_error_savecsv_without_pop_full(k):
     with pytest.raises(AttributeError):
         k.savecsv('does_not_reach_output')
 
-def test_raise_error_saveoutput_without_N(k):
+def test_raise_error_saveoutput_without_pop_full(k):
     with pytest.raises(AttributeError):
         k.saveoutput('does_not_reach_output')
 

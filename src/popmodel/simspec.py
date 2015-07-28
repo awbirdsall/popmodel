@@ -65,7 +65,7 @@ def dornvoigt(wc, wd, wnum):
     voigt_norm = raw_voigt*norm_factor
     areaplotted = voigt_norm.sum() * xstep
     if areaplotted < 0.9:
-        LOGGER.warning('Warning: profile contains <90% of total area: %3d',
+        LOGGER.warning('Warning: profile contains <90%% of total area: %3d',
                        areaplotted)
     return xarr, voigt_norm
 

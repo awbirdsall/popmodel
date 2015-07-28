@@ -172,7 +172,7 @@ class KineticsRun(object):
         # nomenclature for name of keys. Each key points to a value
         # corresponding to a particular vibronic state (0 = 'a', 1 = 'b',
         # 2 = 'c', 3 = 'd'), which is the index used by arrays describing
-        # population (e.g., KineticsRun.N)
+        # population (e.g., KineticsRun.pop_full)
         self.levels = {}
 
         # build list of levels in system
@@ -257,16 +257,16 @@ class KineticsRun(object):
         self.sweepfunc = None
         # compact array of integrated population dynamics, with two entries
         # within each vibronic level (within/without rot level of interest).
-        self.abcpop = None
+        self.pop_abbrev = None
         # full array of integrated bins
-        if self.odepar['keepN']:
-            self.N = None
-            self.N0 = None
+        if self.odepar['keep_pop_full']:
+            self.pop_full = None
+            self.pop_init = None
 
         # extract invariant kinetics parameters
         self.rates = rates
-        # overwrite following subdictionaries for appropriate format for dN:
-        # overall vibrational quenching rate from b:
+        # overwrite following subdictionaries for appropriate format for
+        # d_pop_full: overall vibrational quenching rate from b:
         self.rates['kqb']['tot'] = oh.kqavg(rates['kqb']['n2'],
                                             rates['kqb']['o2'],
                                             rates['kqb']['h2o'],
@@ -342,7 +342,7 @@ class KineticsRun(object):
                                  oh.ROTFRAC['c'][self.uvline['Nc']],
                                  oh.ROTFRAC['d'][self.uvline['Nd']]])
 
-    def makeAbs(self):
+    def makeabs(self):
         '''Make an absorption profile using self.hline and experimental
         parameters.
         '''
@@ -356,7 +356,7 @@ class KineticsRun(object):
         '''Calculate average fluorescence (photons/s) over given time interval.
 
         Requires KineticsRun.solveode() to have been run, with
-        KineticsRun.odepar['keepN'] = True.
+        KineticsRun.odepar['keep_pop_full'] = True.
 
         Parameters
         ----------
@@ -373,10 +373,11 @@ class KineticsRun(object):
         Average fluorescence rate over time interval, photons/s.
         '''
 
-        if self.N is None:
-            raise AttributeError('KineticsRun instance does not have `N`. '
-                                 'Need to have run KineticsRun.solveode() '
-                                 'with KineticsRun.odepar[\'keepN\'] = True.')
+        if self.pop_full is None:
+            raise AttributeError('KineticsRun instance does not have '
+                                 '`pop_full`. Need to have run '
+                                 'KineticsRun.solveode() with '
+                                 'KineticsRun.odepar[\'keep_pop_full\']=True.')
 
         # Fluorescence does not apply if the only levels are in the electronic
         # ground state.
@@ -409,22 +410,21 @@ class KineticsRun(object):
             haslaser : Boolean
             Whether laser excitation is into A(v'=0).
             '''
-            fluorpop = self.N[dt_s, 2, :].sum(1)
+            fluorpop = self.pop_full[dt_s, 2, :].sum(1)
             spont_emit = self.rates['Aca']
             fluor = spont_emit
             quench = self.rates['kqc']['tot'] * self.detcell['Q']
             if haslaser:
                 # stim_emit needs to account for scaling by being only from
                 # single rotational level within "fluorpop" and being
-                # a function of time (whether uvlaser is on or not)
-                rot_factor = np.empty_like(self.tbins[dt_s])
-                # use idx_zeros to avoid divide-by-zero warning
-                idx_zeros = self.N[dt_s, 2, :].sum(1) == 0
-                rot_factor[idx_zeros] = 0
-                rot_factor[~idx_zeros] = (
-                    self.N[dt_s, 2, SLICEDICT['rot_level']].sum(1)[~idx_zeros] /
-                    self.N[dt_s, 2, :].sum(1)[~idx_zeros]
-                    )
+                # a function of time (whether uvlaser is on or not).
+                rot_factor = np.zeros_like(self.tbins[dt_s])
+                # avoid divide-by-zero warning when rot_denom == 0
+                rot_num = self.pop_full[dt_s, 2, SLICEDICT['rot_level']].sum(1)
+                rot_denom = self.pop_full[dt_s, 2, :].sum(1)
+                idx_zeros = rot_denom == 0
+                rot_factor[~idx_zeros] = (rot_num[~idx_zeros] /
+                                          rot_denom[~idx_zeros])
                 stim_emit = (intensity(self.tbins[dt_s], self.uvlaser) *
                              self.rates['Bcb'] * rot_factor)
             else:
@@ -443,7 +443,7 @@ class KineticsRun(object):
             haslaser : Boolean
             Whether laser excitation is into A(v'=1).
             '''
-            fluorpop = self.N[dt_s, 3, :].sum(1)
+            fluorpop = self.pop_full[dt_s, 3, :].sum(1)
             spont_emit = self.rates['Ada'] + self.rates['Adb']
             fluor = self.rates['Ada']
             # use 'kqc' rate as proxy for 'kqd'
@@ -452,11 +452,11 @@ class KineticsRun(object):
             if haslaser:
                 # stim_emit calcs
                 rot_factor = np.empty_like(self.tbins[dt_s])
-                idx_zeros = self.N[dt_s, 3, :].sum(1) == 0
+                idx_zeros = self.pop_full[dt_s, 3, :].sum(1) == 0
                 rot_factor[idx_zeros] = 0
                 rot_factor[~idx_zeros] = (
-                    self.N[dt_s, 3, SLICEDICT['rot_level']].sum(1)
-                    [~idx_zeros] / self.N[dt_s, 3, :].sum(1)[~idx_zeros]
+                    self.pop_full[dt_s, 3, SLICEDICT['rot_level']].sum(1)
+                    [~idx_zeros] / self.pop_full[dt_s, 3, :].sum(1)[~idx_zeros]
                     )
                 stim_emit = (intensity(self.tbins[dt_s], self.uvlaser) *
                              self.rates['Bcb'] * rot_factor)
@@ -491,7 +491,7 @@ class KineticsRun(object):
 
         Outputs:
         --------
-        N : ndarray
+        pop_full : ndarray
         Relative population of 'a', 'b' (and 'c') states over integration time.
         Three-dimensional array: first dimension time, second dimension a/b/c
         state, third dimension subpopulations within state.
@@ -514,7 +514,7 @@ class KineticsRun(object):
         if self.dosweep:
             self.logger.info('solveode: sweep mode: %s',
                              self.sweep.stype)
-            self.makeAbs()
+            self.makeabs()
 
             # Align bins for IR laser and absorbance features for integration
             self.sweep.alignbins(self.abfeat)
@@ -532,8 +532,8 @@ class KineticsRun(object):
             tsweep = self.sweep.tsweep
             stype = self.sweep.stype
 
-            # Determine location of swept IR (a to b) laser by defining 1D array
-            # self.sweepfunc: las_bins index for each point in tsweep.
+            # Determine location of swept IR (a to b) laser by defining 1D
+            # array self.sweepfunc: las_bins index for each point in tsweep.
             tindex = np.arange(np.size(self.tbins))
             tindexsweep = np.searchsorted(self.tbins, tsweep, side='right')-1
             if stype == 'saw':
@@ -559,41 +559,43 @@ class KineticsRun(object):
 
         # set up ODE
 
-        # Create initial state N0, all pop distributed in ground state
-        self.N0 = np.zeros((self.nlevels, self.sweep.las_bins.size+3))
+        # Create initial state pop_init, all pop distributed in ground state
+        self.pop_init = np.zeros((self.nlevels, self.sweep.las_bins.size+3))
         if self.dosweep:
-            self.N0[0, 0:-3] = (self.abfeat.intpop * self.rotfrac[0] *
-                                self.detcell['ohtot'] / 2)
+            self.pop_init[0, 0:-3] = (self.abfeat.intpop * self.rotfrac[0] *
+                                      self.detcell['ohtot'] / 2)
             # pop outside laser sweep
-            self.N0[0, -3] = ((self.abfeat.pop.sum() -
-                               self.abfeat.intpop.sum()) * self.rotfrac[0] *
-                              self.detcell['ohtot'] / 2)
+            self.pop_init[0, -3] = ((self.abfeat.pop.sum() -
+                                     self.abfeat.intpop.sum()) *
+                                    self.rotfrac[0] *
+                                    self.detcell['ohtot'] / 2)
         else:
-            self.N0[0, 0] = self.detcell['ohtot'] * self.rotfrac[0] / 2
-            self.N0[0, -3] = 0 # no population within rot level isn't excited.
+            self.pop_init[0, 0] = self.detcell['ohtot'] * self.rotfrac[0] / 2
+            self.pop_init[0, -3] = 0 # no pop outside laser bandwidth
         # other half of lambda doublet
-        self.N0[0, -2] = self.detcell['ohtot'] * self.rotfrac[0] / 2
+        self.pop_init[0, -2] = self.detcell['ohtot'] * self.rotfrac[0] / 2
         # other rot
-        self.N0[0, -1] = self.detcell['ohtot'] * (1-self.rotfrac[0])
+        self.pop_init[0, -1] = self.detcell['ohtot'] * (1-self.rotfrac[0])
 
-        # Create array to store output at each timestep, depending on keepN:
-        # N stores a/b/c state pops in each bin over time.
-        # abcpop stores a/b/c pops, tracks in or out rot/lambda of interest.
-        if self.odepar['keepN']:
-            self.N = np.empty((t_steps, self.nlevels,
-                               self.sweep.las_bins.size+3))
-            self.N[0] = self.N0
+        # Create array to store output at each timestep, depending on
+        # keep_pop_full:
+        # pop_full stores a/b/c state pops in each bin over time.
+        # pop_abbrev stores a/b/c pops, tracks in or out rot/lambda of
+        # interest.
+        if self.odepar['keep_pop_full']:
+            self.pop_full = np.empty((t_steps, self.nlevels,
+                                      self.sweep.las_bins.size+3))
+            self.pop_full[0] = self.pop_init
         else:
-            # TODO rename abcpop to something better since ab abc abcd possible
-            self.abcpop = np.empty((t_steps, self.nlevels, 2))
-            self.abcpop[0] = np.array([self.N0[:, 0:-2].sum(1),
-                                       self.N0[:, -2:].sum(1)]).T
+            self.pop_abbrev = np.empty((t_steps, self.nlevels, 2))
+            self.pop_abbrev[0] = np.array([self.pop_init[:, 0:-2].sum(1),
+                                           self.pop_init[:, -2:].sum(1)]).T
 
         # Initialize scipy.integrate.ode object, lsoda method
-        r = ode(self.dN)
+        r = ode(self.d_pop_full)
         # r.set_integrator('vode',nsteps=500,method='bdf')
         r.set_integrator('lsoda', with_jacobian=False,)
-        r.set_initial_value(list(self.N0.ravel()), 0)
+        r.set_initial_value(list(self.pop_init.ravel()), 0)
 
         self.logger.info('  %  |  time  |  bin  ')
         self.logger.info('----------------------')
@@ -614,15 +616,18 @@ class KineticsRun(object):
             # integrate
             entry = int(round(r.t/dt))+1
             nextstep = r.integrate(r.t + dt)
-            nextstepN = np.resize(nextstep,
-                                  (self.nlevels, self.sweep.las_bins.size + 3))
+            nextstep_pop_full = np.resize(nextstep,
+                                          (self.nlevels,
+                                           self.sweep.las_bins.size + 3))
 
             # save output
-            if self.odepar['keepN'] == True:
-                self.N[entry] = nextstepN
+            if self.odepar['keep_pop_full'] == True:
+                self.pop_full[entry] = nextstep_pop_full
             else:
-                self.abcpop[entry] = np.array([nextstepN[:, 0:-2].sum(1),
-                                               nextstepN[:, -2:].sum(1)]).T
+                self.pop_abbrev[entry] = np.array([
+                    nextstep_pop_full[:, 0:-2].sum(1),
+                    nextstep_pop_full[:, -2:].sum(1)
+                    ]).T
 
             self.time_progress += 1
 
@@ -646,7 +651,7 @@ class KineticsRun(object):
             self.logger.warning('laspos: voigt_pos out of range')
         return voigt_pos
 
-    def dN(self, t, y):
+    def d_pop_full(self, t, y):
         '''Construct differential equations to describe 2- or 3-state model.
 
         Parameters:
@@ -655,25 +660,26 @@ class KineticsRun(object):
         Time
         y: ndarray
         1D-array describing the population in each bin in each energy level.
-        Flattened version of multidimensional array `N`.
+        Flattened version of multidimensional array `pop_full`.
 
         Outputs
         -------
         result : ndarray
-        1D-array describing dN in all 'a' states, then 'b', ...
+        1D-array describing d_pop_full in all 'a' states, then 'b', ...
         '''
-        # ode method requires y passed in and out of dN to be one-dimensional.
-        # For calculations within dN, reshape y back into 2D form of N
+        # ode method requires y passed in and out of d_pop_full to be
+        # one-dimensional. For calculations within d_pop_full, reshape y back
+        # into 2D form of pop_full
         y = y.reshape(self.nlevels, -1)
 
         # calculate fdist and fdist_lambda, distribution *within* single
         # rotational level or lambda level that is relaxed to
         if self.odepar['redistequil']:
-            # equilibrium distribution in ground state, as calced for N0
-            fdist = (self.N0[0, :-1] / self.N0[0, :-1].sum())
+            # equilibrium distribution in ground state, as calced for pop_init
+            fdist = (self.pop_init[0, :-1] / self.pop_init[0, :-1].sum())
             fdist_lambda = fdist[:-1] / fdist[:-1].sum()
-            # for A-state, assume distribution same as N0 but lambda-doublet is
-            # non-existent.
+            # for A-state, assume distribution same as pop_init but
+            # lambda-doublet is non-existent.
             fdist_A = np.append(fdist_lambda, 0)
             fdist_array = np.vstack((fdist, fdist, fdist_A, fdist_A))
         elif y[0, 0:-1].sum() != 0:
@@ -687,7 +693,7 @@ class KineticsRun(object):
 
         # TODO: cleaner implementation of 'internal' processes
 
-        # # within dN
+        # # within d_pop_full
         # if self.solveode['rotequil']:
         #     rotarray = self.rotprocesses(y, t)
         # else:
@@ -798,10 +804,10 @@ class KineticsRun(object):
         Parameters
         ----------
         y : ndarray
-        Population array used by KineticsRun.dN
+        Population array used by KineticsRun.d_pop_full
 
         t : float
-        Time (s) used by KineticsRun.dN and solveode
+        Time (s) used by KineticsRun.d_pop_full and solveode
 
         Outputs
         -------
@@ -821,10 +827,10 @@ class KineticsRun(object):
         Name of process in VIBRONICDICT
 
         y : ndarray
-        Population array used by KineticsRun.dN
+        Population array used by KineticsRun.d_pop_full
 
         t : float
-        Time (s) used by KineticsRun.dN and solveode
+        Time (s) used by KineticsRun.d_pop_full and solveode
 
         Outputs
         -------
@@ -851,7 +857,8 @@ class KineticsRun(object):
         '''
         if coefftype(proc) == 'ir_laser' and self.odepar['withoutIR'] == True:
             return False
-        elif coefftype(proc) == 'uv_laser' and self.odepar['withoutUV'] == True:
+        elif (coefftype(proc) == 'uv_laser' and
+              self.odepar['withoutUV'] == True):
             return False
         else:
             to_include = (startlevel(proc) in self.levels and
@@ -874,15 +881,12 @@ class KineticsRun(object):
     def popsfigure(self, title='population dynamics', subpop=None):
         '''For solved KineticsRun, create figure plotting selected subpops.
 
-        Requires `N` as created by `KineticsRun.solveode()`.
+        Requires `pop_full` as created by `KineticsRun.solveode()`.
 
         Parameters
         ----------
         title : str
         Title to display at top of plot.
-
-        yl : str
-        Y-axis label to display.
 
         subpop : list
         List describing subpopulations to plot. Each string in list must be
@@ -898,10 +902,11 @@ class KineticsRun(object):
         are plotted in ax0, with the left y-axis scale. Subpops in 'c' and 'd'
         are plotted in ax1, with the right y-axis scale.
         '''
-        if self.N is None:
-            raise AttributeError('KineticsRun instance does not have `N`. '
-                                 'Need to have run KineticsRun.solveode() with '
-                                 'KineticsRun.odepar[\'keepN\'] = True')
+        if self.pop_full is None:
+            raise AttributeError('KineticsRun instance does not have '
+                                 '`pop_full`. Need to have run '
+                                 'KineticsRun.solveode() with '
+                                 'KineticsRun.odepar[\'keep_pop_full\']=True.')
 
         fig, (ax0) = plt.subplots()
 
@@ -949,10 +954,11 @@ class KineticsRun(object):
     def popseries(self, plotcode):
         '''calculate 1D array describing timeseries of subpopulation.
         '''
-        if self.N is None:
-            raise AttributeError('KineticsRun instance does not have `N`. '
-                                 'Need to have run KineticsRun.solveode() with '
-                                 'KineticsRun.odepar[\'keepN\'] = True')
+        if self.pop_full is None:
+            raise AttributeError('KineticsRun instance does not have '
+                                 '`pop_full`. Need to have run '
+                                 'KineticsRun.solveode() with '
+                                 'KineticsRun.odepar[\'keep_pop_full\']=True.')
 
         # add default if second or third character of plotcode blank
         if len(plotcode) == 3:
@@ -975,7 +981,7 @@ class KineticsRun(object):
         # all sublevels used here should be a slice, so num requires .sum(1).
         # however, just in case sublevel slice is single entry, check ndim of
         # numraw to see if .sum(1) is necessary.
-        numraw = self.N[:, levelidx, sublevelslice]
+        numraw = self.pop_full[:, levelidx, sublevelslice]
         if numraw.ndim == 1:
             num = numraw
         else:
@@ -983,9 +989,9 @@ class KineticsRun(object):
 
         denomabbrev = plotcode[2]
         if denomabbrev == 'd':
-            denom = self.N[:, levelidx, SLICEDICT['rot_level']].sum(1)
+            denom = self.pop_full[:, levelidx, SLICEDICT['rot_level']].sum(1)
         elif denomabbrev == 'l':
-            denom = self.N[:, levelidx, :].sum(1)
+            denom = self.pop_full[:, levelidx, :].sum(1)
         elif denomabbrev == 'p':
             denom = self.detcell['ohtot']
         elif denomabbrev == 'a':
@@ -996,7 +1002,7 @@ class KineticsRun(object):
         popseries = num/denom
         return popseries
 
-    def vslaserfigure(self, func, title='plot', yl='y axis'):
+    def vslaserfigure(self, func, title='plot', ylabel='y axis'):
         '''Make arbitrary plot in time with laser sweep as second plot
 
         Parameters
@@ -1007,26 +1013,26 @@ class KineticsRun(object):
         title : str
         Title to display on top of plot
 
-        yl : str
+        ylabel : str
         Y-axis label to display.
 
         pngout : str
         filename to save PNG output. Displays plot if not given.
         '''
-        if self.abcpop is None and self.N is None:
+        if self.pop_abbrev is None and self.pop_full is None:
             raise AttributeError('Need to have run KineticsRun.solveode()')
 
-        elif self.abcpop is None and self.odepar['keepN']:
-            self.abcpop = np.empty((np.size(self.tbins), self.nlevels, 2))
-            self.abcpop[:, :, 0] = self.N[:, :, 0:-2].sum(2)
-            self.abcpop[:, :, 1] = self.N[:, :, -2:].sum(2)
+        elif self.pop_abbrev is None and self.odepar['keep_pop_full']:
+            self.pop_abbrev = np.empty((np.size(self.tbins), self.nlevels, 2))
+            self.pop_abbrev[:, :, 0] = self.pop_full[:, :, 0:-2].sum(2)
+            self.pop_abbrev[:, :, 1] = self.pop_full[:, :, -2:].sum(2)
 
         fig, (ax0, ax1) = plt.subplots(nrows=2, sharex=True)
         fig.subplots_adjust(hspace=.3)
         x_usec = self.tbins*1e6 # microseconds tends to be natural units
         ax0.plot(x_usec, func)
         ax0.set_title(title)
-        ax0.set_ylabel(yl)
+        ax0.set_ylabel(ylabel)
 
         if self.dosweep:
             time_idx = np.arange(np.size(self.tbins))
@@ -1076,16 +1082,16 @@ class KineticsRun(object):
         first column is time, next three columns are populations of a, b and
         c in state of interest.'''
 
-        if self.abcpop is None and self.N is None:
+        if self.pop_abbrev is None and self.pop_full is None:
             raise AttributeError('Need to have run KineticsRun.solveode()')
-
-        if self.abcpop is None and hasattr(self, 'N') == True:
-            self.abcpop = np.empty((np.size(self.tbins), self.nlevels, 2))
-            self.abcpop[:, :, 0] = self.N[:, :, 0:-2].sum(2)
-            self.abcpop[:, :, 1] = self.N[:, :, -2:].sum(2)
+        elif self.pop_abbrev is None:
+            self.pop_abbrev = np.empty((np.size(self.tbins), self.nlevels, 2))
+            self.pop_abbrev[:, :, 0] = self.pop_full[:, :, 0:-2].sum(2)
+            self.pop_abbrev[:, :, 1] = self.pop_full[:, :, -2:].sum(2)
         timeseries = self.tbins[:, np.newaxis] # bulk out so ndim = 2
-        abcpop_slice = self.abcpop[:, :, 0] # slice along states of interest
-        np.savetxt(csvout, np.hstack((timeseries, abcpop_slice)),
+        pop_abbrev_slice = self.pop_abbrev[:, :, 0] # include states of
+                                                    # interest
+        np.savetxt(csvout, np.hstack((timeseries, pop_abbrev_slice)),
                    delimiter=",", fmt="%.6e")
 
     def saveoutput(self, npzfile):
@@ -1100,16 +1106,15 @@ class KineticsRun(object):
         Path of file to save output (.npz extension standard).
         '''
 
-        if self.abcpop is None and self.N is None:
+        if self.pop_abbrev is None and self.pop_full is None:
             raise AttributeError('Need to have run KineticsRun.solveode()')
-
-        if self.abcpop is None and hasattr(self, 'N') == True:
-            self.abcpop = np.empty((np.size(self.tbins), self.nlevels, 2))
-            self.abcpop[:, :, 0] = self.N[:, :, 0:-2].sum(2)
-            self.abcpop[:, :, 1] = self.N[:, :, -2:].sum(2)
+        elif self.pop_abbrev is None:
+            self.pop_abbrev = np.empty((np.size(self.tbins), self.nlevels, 2))
+            self.pop_abbrev[:, :, 0] = self.pop_full[:, :, 0:-2].sum(2)
+            self.pop_abbrev[:, :, 1] = self.pop_full[:, :, -2:].sum(2)
 
         np.savez(npzfile,
-                 abcpop=self.abcpop,
+                 pop_abbrev=self.pop_abbrev,
                  las_bins=self.sweep.las_bins,
                  tbins=self.tbins,
                  sweepfunc=self.sweepfunc,
@@ -1119,8 +1124,8 @@ class KineticsRun(object):
     def loadoutput(self, npzfile):
         '''Populate KineticsRun instance with results saved to npz file.
 
-        Writes to values for abcpop, sweep.las_bins, tbins, sweepfunc, abfeat,
-        abfeat.abs_freq and abfeat.pop.
+        Writes to values for pop_abbrev, sweep.las_bins, tbins, sweepfunc,
+        abfeat, abfeat.abs_freq and abfeat.pop.
 
         Parameters
         ----------
@@ -1128,7 +1133,7 @@ class KineticsRun(object):
         Path of npz file with saved output.
         '''
         with np.load(npzfile) as data:
-            self.abcpop = data['abcpop']
+            self.pop_abbrev = data['pop_abbrev']
             self.sweep.las_bins = data['las_bins']
             self.tbins = data['tbins']
             self.sweepfunc = data['sweepfunc']
@@ -1291,7 +1296,7 @@ def intensity(timearray, laser):
     if not laser['pulse']:
         intensities.fill(spec_intensity)
     else:
-        whenon = ((timearray > laser['delay']) & 
+        whenon = ((timearray > laser['delay']) &
                   (timearray < laser['pulse']+laser['delay']))
         intensities[whenon] = spec_intensity
 

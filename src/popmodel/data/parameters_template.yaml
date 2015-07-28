@@ -28,7 +28,8 @@ uvlaser:
     delay: 25.e-6 # s
 
 odepar:
-    keepN: True # keeps full N array, uses more mem, reqd for some analysis
+    keep_pop_full: True # keeps pop_full array (rather than pop_abbrev), uses
+                        # more mem, reqd for some analysis
     inttime: 2.e-4 # integration time, s
     dt: 1.e-7 # time between each integration point, s. Overridden by
               # avg_step_in_bin if dosweep is True
