@@ -308,12 +308,18 @@ class KineticsRun(object):
         # same rot level of interest in 'c' and 'd'
         self.uvline['Nd'] = self.uvline['Nc']
 
-        # For now, use calculateuv to lookup uvline wavelength
-        # TODO account for whether uv line is ca, cb, or db.
-        # TODO also account for Q_1 vs Q_12, etc.?
+        # lookup uvline wavelength
+        if self.odepar['withoutIR']:
+            # lower-state energy determined by lower state of (turned-off)
+            # infrared transition...
+            E_uv_lower = self.hline['E_low']
+        else:
+            E_uv_lower = self.hline['E_low'] + self.hline['wnum_ab']
+        vib_upper = int(self.uvline['vib'][0])
         self.uvline['wnum_uv'] = oh.calculateuv(self.uvline['Nc'],
-                                                self.hline['wnum_ab'],
-                                                self.hline['E_low'])
+                                                vib_upper,
+                                                int(self.uvline['rovib'][2]),
+                                                E_uv_lower)
 
         # UV Einstein coefficients:
         # Assuming same Acb regardless of b and c rotational level or whether

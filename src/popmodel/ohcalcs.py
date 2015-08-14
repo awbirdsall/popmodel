@@ -282,51 +282,188 @@ def fwhm_doppler(nu, temp, mass):
     fwhm = (2*m.pi*nu/c) * (8*kb*temp*m.log(2)/mass)**0.5
     return fwhm
 
-def calculateuv(Nc, wnum_ab, E_low):
+def calculateuv(N_upper, vib_upper, f_upper, E_lower):
     '''
-    Calculate c<--b transition wavenumber, accounting for rotational states.
+    Calculate uv transition wavenumber, accounting for rotational states.
 
-    Fails if Nc>4, so need to filter out high N transitions from HITRAN first
-    -- intensity cutoff should be fine.
+    Looks up sigma-state energy level in v'=0 or v'=1 with rotational level
+    N from 0 to 29.
 
     PARAMETERS:
     -----------
-    Nc : int
-    N quantum number for 'c' state.
+    N_upper : int
+    N quantum number for upper state.
 
-    wnum_ab : float
-    Wavenumber of b<--a transition, cm^-1.
+    vib_upper : int
+    Vibrational level of upper state (0 or 1)
 
-    E_low : float
-    Energy level of 'a' state, cm^-1
+    f_upper : int
+    F number of upper state (1 or 2)
+
+    E_lower : float
+    Energy of lower state, cm^-1.
 
     OUTPUTS:
     --------
-    wnum_bc : float
-    Wavenumbers of c<--b transition, cm^-1.
+    wnum_uv : float
+    Wavenumber of UV transition, cm^-1.
     '''
-    # dict of N'-dependent c-state energy, cm^-1
-    # Using Erin/Glenn's values from 'McGee' for v'=0 c-state
-    E_cdict = {4: 32778.1, 3: 32623.4, 2: 32542, 1: 32474.5, 0: 32778.1}
-    # use dict to choose appropriate E_c
-    E_c = E_cdict[Nc] # Error if Nc>4 ...
-    wnum_bc = E_c - wnum_ab - E_low
-    return wnum_bc
+    # use Table 11 of Dieke and Crosswhite (JQSRT 1962) for sigma-state energy
+    # levels (source for A(v'=0) energies from McGee and McIlrath 1984 paper
+    # previously used here -- should be consistent with previous calcs if they
+    # were correctly performed with accurate UV transition choice)
+    if vib_upper == 0:
+        if f_upper == 1:
+            # v'=0, F1
+            energylist = [32440.61,
+                          32474.62,
+                          32542.56,
+                          32644.22,
+                          32779.49,
+                          32948.31,
+                          33150.14,
+                          33384.97,
+                          33652.29,
+                          33951.80,
+                          34282.99,
+                          34645.53,
+                          35038.61,
+                          35462.01,
+                          35914.82,
+                          36396.66,
+                          36906.50,
+                          37443.91,
+                          38007.90,
+                          38597.79,
+                          39212.69,
+                          39851.66,
+                          40513.79,
+                          41198.19,
+                          41903.78,
+                          42629.60,
+                          43374.41,
+                          44137.43,
+                          44917.20,
+                          45712.85]
+        elif f_upper == 2:
+            # v'=0, F2
+            energylist = [32440.50,
+                          32474.30,
+                          32541.98,
+                          32643.45,
+                          32778.49,
+                          32947.05,
+                          33148.73,
+                          33383.26,
+                          33650.38,
+                          33949.67,
+                          34280.64,
+                          34642.92,
+                          35035.86,
+                          35459.02,
+                          35911.59,
+                          36393.24,
+                          36902.90,
+                          37440.15,
+                          38003.93,
+                          38593.62,
+                          39208.99,
+                          39847.20,
+                          40509.23,
+                          41193.51,
+                          41898.86,
+                          42624.65,
+                          43369.31,
+                          44132.26,
+                          44911.77,
+                          45707.33]
+        else:
+            raise ValueError("invalid f_upper: ", f_upper)
+    elif vib_upper == 1:
+        if f_upper == 1:
+            # v'=1, F1
+            energylist = [35429.16,
+                          35461.50,
+                          35526.06,
+                          35622.71,
+                          35751.30,
+                          35911.70,
+                          36103.59,
+                          36326.71,
+                          36580.68,
+                          36865.21,
+                          37179.72,
+                          37523.85,
+                          37897.08,
+                          38298.85,
+                          38728.43,
+                          39185.24,
+                          39668.56,
+                          40177.74,
+                          40711.81,
+                          41270.16,
+                          41851.78,
+                          42455.86,
+                          43081.34,
+                          43727.39,
+                          44392.89,
+                          45076.75,
+                          45777.83,
+                          46495.18,
+                          47227.29,
+                          47973.14]
+        elif f_upper == '2':
+            # v'=1, F2
+            energylist = [35429.06,
+                          35461.18,
+                          35525.52,
+                          35621.95,
+                          35750.32,
+                          35910.50,
+                          36102.19,
+                          36325.11,
+                          36578.88,
+                          36863.21,
+                          37177.52,
+                          37521.45,
+                          37894.49,
+                          38296.05,
+                          38725.43,
+                          39182.09,
+                          39665.20,
+                          40174.24,
+                          40708.09,
+                          41266.28,
+                          41847.68,
+                          42451.64,
+                          43076.97,
+                          43722.90,
+                          44388.16,
+                          45072.13,
+                          45773.00,
+                          46490.18,
+                          47222.07,
+                          47967.87]
+        else:
+            raise ValueError("invalid f_upper: ", f_upper)
+    else:
+        raise ValueError("invalid vib_upper: ", vib_upper)
+    E_upper = energylist[N_upper]
+    wnum_uv = E_upper - E_lower
+    return wnum_uv
 
 def press_broaden(press=OP_PRESS):
     '''
-    Uses HITRAN parameters to calculate HWHM, in MHz, at 'press'
-    in torr. Default pressure of OP_PRESS
+    Uses HITRAN parameters to calculate HWHM, in MHz, at 'press' in torr.
     '''
     hwhm = press * atm.TORR_TO_ATM * (G_AIR) * atm.WAVENUM_TO_HZ / 1e6
     return hwhm
 
 def sat(bandwidth, beam, q=QUENCHB, freq=NU12, a21=ABA):
     '''
-    Calculates power when saturation parameter is equal to 1,
-    following Daily et al., 1977, i.e., when population of excited
-    state is half that of ground state, scaled by degeneracies. Full
-    saturation is when this parameter is >>1.
+    Calculates power when saturation parameter equals 1, following Daily et
+    al., 1977, i.e., when population of excited state is half of ground state,
+    scaled by degeneracies. Full saturation is when parameter is >>1.
 
     Parameters
     ----------

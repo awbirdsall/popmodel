@@ -40,11 +40,16 @@ odepar:
     redistequil: True # RET and lambda relaxation converges to (hard-coded)
                       # thermal distribution rather than instantaneous
 
-irline: 'P_1(3)ff' # follow label system in loadhitran
+irline: 'P_1(3)ff' # follow label system in loadhitran.
+    # Note that the initial rotational state (#) is used to determine the
+    # appropriate v"=1 and A(v') rotational states based on the P/Q/R branch
+    # here and in ['uvline']['rovib']. Furthermore, if withoutIR is True, the
+    # (#) defined here is used as the lower rotational state of the uv line.
 
 uvline:
     vib: '11' # vib bands: 11, 10, 00 (with appropriate withoutUV, withoutIR)
-    rovib: 'P_1' # abbreviated version of `irline` label
+    rovib: 'P_1' # abbreviated version of `irline` label. See comment on irline
+                 # for treatment of rotational states of UV transition.
 
 detcell: # detection cell
     press: 3 # torr
