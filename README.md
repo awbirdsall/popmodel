@@ -1,5 +1,5 @@
 # popmodel
-Python package to calculate the population of molecules in particular quantum states using a master equation approach. Designed for (and currently only usable) for excitation of the hydroxyl radical (OH) to one excited vibrational state and one excited electronic state, with two different lasers.
+Python package to calculate the population of molecules in particular quantum states using a master equation approach. Designed for (and currently only usable) for excitation of the hydroxyl radical (OH) to one excited vibrational state and one excited electronic state, with two different lasers, and up to four vibronic states being tracked.
 
 This represents a slow accumulation of calculations I've needed to do for a research project, and would need some work to become more generalized.
 
@@ -60,7 +60,7 @@ k.plotpops()
 ## Installation
 `pip install popmodel` install from PyPI
 
-`pip install git+https://github.com/awbirdsall/popmodel` installs most recent commit on github (bleeding-edge)
+`pip install git+https://github.com/awbirdsall/popmodel` installs most recent commit on github (bleeding-edge is `developmental` branch)
 
 ## Dependencies
 Written for Python 2.7. Requires `numpy`, `scipy`, `pandas`, `pyyaml` and `matplotlib` (automatically handled using `pip` to install). Tests written using `pytest` using the [`pytest-mpl` plugin](https://github.com/astrofrog/pytest-mpl). Developed on Windows.

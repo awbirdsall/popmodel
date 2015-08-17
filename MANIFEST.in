@@ -1,2 +1,3 @@
 include README.md
 include src/popmodel/data/parameters_template.yaml
+include src/popmodel/data/hitran_sample.par
