@@ -328,6 +328,11 @@ class KineticsRun(object):
         vbc = atm.WAVENUM_TO_HZ*self.uvline['wnum_uv']
         self.rates['Bcb'] = oh.b21(oh.ACB, vbc)
         self.rates['Bbc'] = oh.b12(oh.ACB, self.hline['gb'], oh.GC, vbc)
+        if not self.odepar['withoutUV']:
+            self.logger.info('setupuvline: using %s line at %d cm^-1 (%.1f nm)',
+                             self.uvline['rovib'],
+                             self.uvline['wnum_uv'],
+                             oh.c/vbc*1e9)
 
     def makerotfracarray(self):
         '''Make KineticsRun.rotfrac array of equilibrium rotational pops.
@@ -603,8 +608,8 @@ class KineticsRun(object):
         r.set_integrator('lsoda', with_jacobian=False,)
         r.set_initial_value(list(self.pop_init.ravel()), 0)
 
-        self.logger.info('  %  |  time  |  bin  ')
-        self.logger.info('----------------------')
+        self.logger.info('  %  |   time   |  bin  ')
+        self.logger.info('------------------------')
 
         # Solve ODE
         self.time_progress = 0 # laspos looks at this to choose sweepfunc index
@@ -613,7 +618,7 @@ class KineticsRun(object):
             # display progress
             complete = r.t/tl
             if floor(complete*100/10) != floor(old_complete*100/10):
-                self.logger.info(' %3.0f | %6.2g | %4.0f  ',
+                self.logger.info(' %3.0f | %8.2g | %4.0f  ',
                                  complete*100,
                                  r.t,
                                  self.sweepfunc[self.time_progress])
