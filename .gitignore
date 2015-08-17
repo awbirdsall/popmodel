@@ -1,13 +1,11 @@
 *.swp
 *.pyc
 *.un~
-*.par
 build/
 src/popmodel.egg-info/
 dist/
 *.png
-parameters_sweep.yaml
-parameters_test.yaml
 *.npz
 popmodel.egg-info/
 *.csv
+raw_hitran/
