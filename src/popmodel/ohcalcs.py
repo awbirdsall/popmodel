@@ -49,17 +49,16 @@ GC = 8    # From (2*J + 1) and N = 3 (?) for Tsuji et al. feature. Assuming
             # Q branch.
 
 ## Einstein coefficients
-# Aba is very slow and unimportant for popmodel calculations. Acb and Aca are
-# used by popmodel as values independent of line selected.
+# Aba is very slow and unimportant for popmodel calculations.
 ABA = 16.9      # Einstein coefficient for spontaneous emission, s^-1;
                 # using van de Meerakker et al, 2005
                 # alt value: 14.176 s^-1 from Tsuji et al, 2000
 
-ACB = 5300 #for A2Sigma+(v'=0)-->X2Pi(v"=1) Copeland (1987). Really, we'd
-# want the A's for each rotational transition...
-
-ACA = 1.45e6 #s-1, for A2Sigma+(v'=0)-->X2Pi(v"=0), German (1975)
-# No c<--a laser, so B coefficients not applicable.
+# Einstein coefficients for A--X transitions, Copeland et al. 1987 Chem Phys
+# Lett 138, 425-430. ADICT not directly accessed in main.KineticsRun code
+# (instead looks at rates in parameter yaml file) but is kept here as
+# reference.
+ADICT = {'00': 1.44e6, '01': 5.3e3, '10': 5.11e5, '11': 8.38e5}
 
 ## Rotational relaxation
 # Define in terms of depopulation rate of rotational level of interest. Model

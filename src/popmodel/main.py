@@ -322,12 +322,18 @@ class KineticsRun(object):
                                                 E_uv_lower)
 
         # UV Einstein coefficients:
-        # Assuming same Acb regardless of b and c rotational level or whether
-        # UV is to c or d. Could do better looking at a dictionary of A values
-        # TODO Determine whether to use Acb, Aca or Adb as base Einstein coeff.
+        # Lookup A coefficient based on vibrational band.
+        # Have not implemented lookup based on rotational dependence of
+        # A coefficient. Crosley and Lengel 1975 says that factor is something
+        # like 1-BETA*J"(J"+1) for small J',J" where BETA is on order of 6e-4,
+        # meaning correction is on order of 0.99 for J"=3.5. Not an important
+        # correction for small J".
         vbc = atm.WAVENUM_TO_HZ*self.uvline['wnum_uv']
-        self.rates['Bcb'] = oh.b21(oh.ACB, vbc)
-        self.rates['Bbc'] = oh.b12(oh.ACB, self.hline['gb'], oh.GC, vbc)
+        self.rates['Bcb'] = oh.b21(self.rates['A'][self.uvline['vib']], vbc)
+        self.rates['Bbc'] = oh.b12(self.rates['A'][self.uvline['vib']],
+                                   self.hline['gb'],
+                                   oh.GC,
+                                   vbc)
         if not self.odepar['withoutUV']:
             self.logger.info('setupuvline: using %s line at %d cm^-1 (%.1f nm)',
                              self.uvline['rovib'],
@@ -422,7 +428,7 @@ class KineticsRun(object):
             Whether laser excitation is into A(v'=0).
             '''
             fluorpop = self.pop_full[dt_s, 2, :].sum(1)
-            spont_emit = self.rates['Aca']
+            spont_emit = self.rates['A']['00']
             fluor = spont_emit
             quench = self.rates['kqc']['tot'] * self.detcell['Q']
             if haslaser:
@@ -455,8 +461,8 @@ class KineticsRun(object):
             Whether laser excitation is into A(v'=1).
             '''
             fluorpop = self.pop_full[dt_s, 3, :].sum(1)
-            spont_emit = self.rates['Ada'] + self.rates['Adb']
-            fluor = self.rates['Ada']
+            spont_emit = self.rates['A']['10'] + self.rates['A']['11']
+            fluor = self.rates['A']['10']
             # use 'kqc' rate as proxy for 'kqd'
             quench = (self.rates['kqc']['tot'] * self.detcell['Q'] +
                       self.rates['kqd_vib'] * self.detcell['Q'])
@@ -702,7 +708,7 @@ class KineticsRun(object):
         else:
             fdist_array = np.zeros((y.shape[0], y.shape[1] - 1))
 
-        # TODO: cleaner implementation of 'internal' processes
+        # someday idea: cleaner implementation of 'internal' processes
 
         # # within d_pop_full
         # if self.solveode['rotequil']:
@@ -1185,6 +1191,9 @@ SLICEDICT = {'rot_level': np.s_[:-1],
 # rate constant, 'concentration' it needs to be multiplied by (or `None` if
 # first-order), initial level, final level, initial range (within level), final
 # range.
+# Name each entry with description of type of process, followed by suffix that
+# describes the transition: 'ir' or 'uv' if laser transition, 'p0', 'p1', 's0',
+# 's1' for v=0 or 1 level of pi (X) or sigma (A) state, respectively.
 VIBRONICDICT = {'absorb_ir':['Bba',
                              'ir_laser',
                              'pi_v0',
@@ -1233,25 +1242,25 @@ VIBRONICDICT = {'absorb_ir':['Bba',
                                     'pi_v0',
                                     'full',
                                     'full'],
-                'spont_emit_s0p0':['Aca',
+                'spont_emit_s0p0':[['A', '00'],
                                    None,
                                    'sigma_v0',
                                    'pi_v0',
                                    'full',
                                    'full'],
-                'spont_emit_s0p1':['Acb',
+                'spont_emit_s0p1':[['A', '01'],
                                    None,
                                    'sigma_v0',
                                    'pi_v1',
                                    'full',
                                    'full'],
-                'spont_emit_s1p0':['Ada',
+                'spont_emit_s1p0':[['A', '10'],
                                    None,
                                    'sigma_v1',
                                    'pi_v0',
                                    'full',
                                    'full'],
-                'spont_emit_s1p1':['Adb',
+                'spont_emit_s1p1':[['A', '11'],
                                    None,
                                    'sigma_v1',
                                    'pi_v1',

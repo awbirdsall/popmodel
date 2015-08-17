@@ -63,10 +63,11 @@ detcell: # detection cell
 
 rates:
     # spontaneous emission Einstein coefficients (s^-1):
-    Acb: 5300 #for A2Sigma+(v'=0)-->X2Pi(v"=1) Copeland (1987)
-    Aca: 1.45e+6 #s-1, for A2Sigma+(v'=0)-->X2Pi(v"=0), German (1975)
-    Adb: 5300 # A(v'=1)-->X(v"=1)
-    Ada: 1.45e+6 # A(v'=1)-->X(v"=0)
+    A: # Use same Copeland et al. 1987 values as in ohcalcs.ADICT
+        !!str 01: 5300
+        !!str 00: 1.44e+6
+        !!str 11: 8.38e+5
+        !!str 10: 5.11e+5
     # Quenching speciated by N2/O2/H2O: (s^-1/(molec cm^-3)):
     kqb: # vibrational quenching from v"=1
         n2: 1.5e-15 # Only one reported measurement (D'Ottone et al.), but
