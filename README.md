@@ -19,7 +19,12 @@ The core of `popmodel` is the `KineticsRun` object. Each `KineticsRun` instance 
 ### Hitran file
 Infrared line parameters are extracted from the 140-character-format HITRAN 2012 file for OH (default filename `13_hit12.par`), which can be accessed at https://www.cfa.harvard.edu/HITRAN/. Some low-level functions within `loadhitran` module can also read other molecules' HITRAN files, but trying to go through the full workflow called by `loadhitran.processhitran()` used in setting up a `KineticsRun` will not work due to the need to parse strings describing molecule-specific term descriptions. See the HITRAN website for more documentation related to the record format.
 
-An 200-line excerpt from the OH HITRAN file is included at `src/popmodel/data/hitran_sample.par` for use by the test module.
+An 200-line excerpt from the OH HITRAN file is included at `src/popmodel/data/hitran_sample.par` for use by the test module. To extract the path to `hitran_sample.par`:
+
+~~~
+from pkg_resources import resource_filename
+hpath = resource_filename('popmodel','data/hitran_sample.par')
+~~~
 
 ### YAML parameter file
 Parameters for setting up a `KineticsRun` instance are organized in dictionaries corresponding to a YAML parameter file. A template for the format that the YAML file must follow can be found at `src/popmodel/data/parameters_template.yaml`.
@@ -54,7 +59,7 @@ par = pm.importyaml("path_to/yaml/parameters.yaml")
 hpar = pm.loadhitran.processhitran("path_to/13_hit12.par")
 k = pm.KineticsRun(hpar,**par)
 k.solveode()
-k.plotpops()
+k.popsfigure()
 ~~~
 
 ## Installation
