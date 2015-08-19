@@ -11,9 +11,11 @@ here = path.abspath(path.dirname(__file__))
 with open(path.join(here, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
+exec(open('src/popmodel/version.py').read())
+
 setup(
     name='popmodel',
-    version='0.1.0',
+    version=__version__,
     description='Model molecular excited state populations over time',
     long_description=long_description,
     url='https://github.com/awbirdsall/popmodel',
