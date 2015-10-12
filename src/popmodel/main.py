@@ -244,10 +244,6 @@ class KineticsRun(object):
             self.sweep = lambda: None
             self.sweep.las_bins = np.zeros(1)
 
-        # AbsProfile instance made by self.makeabs(), which is called by
-        # solveode() if self.dosweep=True
-        self.abfeat = None
-
         # Instance attributes set up within KineticsRun.solveode():
         # times at which solveode() integration is calculated, s.
         self.tbins = None
@@ -279,6 +275,8 @@ class KineticsRun(object):
         self.choosehline(hpar, irline)
         self.setupuvline()
         self.makerotfracarray()
+        # set up self.abfeat AbsProfile
+        self.makeabs()
 
     def choosehline(self, hpar, label):
         '''Save single line of processed HITRAN file to self.hline.
@@ -360,7 +358,7 @@ class KineticsRun(object):
                                  oh.ROTFRAC['d'][self.uvline['Nd']]])
 
     def makeabs(self):
-        '''Make an absorption profile using self.hline and experimental
+        '''Make an IR absorption profile using self.hline and experimental
         parameters.
         '''
         # Set up IR b<--a absorption profile
@@ -442,8 +440,12 @@ class KineticsRun(object):
                 idx_zeros = rot_denom == 0
                 rot_factor[~idx_zeros] = (rot_num[~idx_zeros] /
                                           rot_denom[~idx_zeros])
+                if self.irlaser['bandwidth'] > self.abfeat.fwhm:
+                    bwcorrect = self.abfeat.fwhm / self.irlaser['bandwidth']
+                else:
+                    bwcorrect = 1
                 stim_emit = (intensity(self.tbins[dt_s], self.uvlaser) *
-                             self.rates['Bcb'] * rot_factor)
+                             self.rates['Bcb'] * rot_factor * bwcorrect)
             else:
                 stim_emit = 0
             qyield = fluor / (spont_emit + stim_emit + quench)
@@ -475,8 +477,12 @@ class KineticsRun(object):
                     self.pop_full[dt_s, 3, SLICEDICT['rot_level']].sum(1)
                     [~idx_zeros] / self.pop_full[dt_s, 3, :].sum(1)[~idx_zeros]
                     )
+                if self.irlaser['bandwidth'] > self.abfeat.fwhm:
+                    bwcorrect = self.abfeat.fwhm / self.irlaser['bandwidth']
+                else:
+                    bwcorrect = 1
                 stim_emit = (intensity(self.tbins[dt_s], self.uvlaser) *
-                             self.rates['Bcb'] * rot_factor)
+                             self.rates['Bcb'] * rot_factor * bwcorrect)
             else:
                 stim_emit = 0
             qyield = fluor / (spont_emit + stim_emit + quench)
@@ -531,7 +537,6 @@ class KineticsRun(object):
         if self.dosweep:
             self.logger.info('solveode: sweep mode: %s',
                              self.sweep.stype)
-            self.makeabs()
 
             # Align bins for IR laser and absorbance features for integration
             self.sweep.alignbins(self.abfeat)
@@ -800,10 +805,18 @@ class KineticsRun(object):
     def ratecoeff(self, ratetype, t):
         '''Value to multiply base rate by to get first-order rate constant.
 
-        Time-dependent when 'coeff' is pulsed laser intensity.
+        Time-dependent when 'coeff' is pulsed laser intensity. Account for
+        possible case of IR laser bandwidth broader than linewidth by
+        multiplying by ratio of FWHM values. Do not correct for laser bandwidth
+        narrower than linewidth because of postulated homogeneous line
+        broadening (i.e., hole-burning not an issue).
         '''
         if ratetype == 'ir_laser':
-            coeff = intensity(t, self.irlaser)
+            if self.irlaser['bandwidth'] > self.abfeat.fwhm:
+                bwcorrect = self.abfeat.fwhm / self.irlaser['bandwidth']
+            else:
+                bwcorrect = 1
+            coeff = intensity(t, self.irlaser) * bwcorrect
         elif ratetype == 'uv_laser':
             coeff = intensity(t, self.uvlaser)
         elif ratetype == 'quencher':
@@ -1076,11 +1089,6 @@ class KineticsRun(object):
         Whether to plot the edges of where the laser sweeps. Requires the
         KineticsRun instance to have a Sweep with self.sweep.las_bins array.
         '''
-        if self.abfeat is None:
-            raise AttributeError("KineticsRun instance missing abfeat. "
-                                 "Requires KineticsRun.solveode() to have "
-                                 "been run with dosweep = True")
-
         fig, (ax0) = plt.subplots(nrows=1)
         ax0.plot(self.abfeat.abs_freq/1e6, self.abfeat.pop)
         ax0.set_title('Calculated absorption feature, '
@@ -1301,7 +1309,9 @@ def getendrng(ratetype):
 def intensity(timearray, laser):
     '''Calculate spec intensity of laser at given array of times.
 
-    Assumes total integration time less than rep rate.
+    Assumes total integration time less than rep rate. Does not account for
+    reduction in usable laser power if laser bandwidth is broader than
+    linewidth.
     '''
     timearray = np.asarray(timearray)
     scalar_input = False
