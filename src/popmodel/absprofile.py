@@ -29,6 +29,7 @@ class AbsProfile(object):
         # instance attributes calculated in makeprofile
         self.abs_freq = None
         self.pop = None
+        self.fwhm = None
         # intpop calculated in Sweep.alignbins() call
         self.intpop = None
 
@@ -84,9 +85,9 @@ class AbsProfile(object):
         self.pop = pop
         startfwhm = abs_freq[pop >= np.max(pop)*0.5][0]
         endfwhm = abs_freq[pop >= np.max(pop)*0.5][-1]
-        fwhm = endfwhm - startfwhm
+        self.fwhm = endfwhm - startfwhm
         self.logger.info('makeprofile: made abs profile')
         self.logger.info('makeprofile: abs profile has FWHM = %.2g MHz',
-                         fwhm/1e6)
+                         self.fwhm/1e6)
         self.logger.info('makeprofile: total width of stored array = %.2g MHz',
                          abswidth/1e6)
