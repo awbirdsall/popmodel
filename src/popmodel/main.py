@@ -956,7 +956,9 @@ class KineticsRun(object):
         maketwinx = any([(s[0] == 'c') or (s[0] == 'd') for s in subpop])
         if maketwinx:
             ax1 = ax0.twinx()
-            fig.subplots_adjust(right=0.8)
+            # prevent wide number tick labels (e.g., "0.00001") from cutting
+            # off y axis labels
+            fig.subplots_adjust(left=0.2, right=0.8)
             ax1.set_ylabel('sigma state populations (c and/or d)')
 
         for plotcode in subpop:
@@ -975,6 +977,7 @@ class KineticsRun(object):
         ax0.set_title(title)
         ax0.set_xlabel('Time ($\mu$s)')
         ax0.set_ylabel('pi state pops (a or b)')
+        ax0.set_xlim((0, self.odepar['inttime']*1e6))
 
         # gather up lines and labels from both axes for unified legend
         lines_list = [ax.get_legend_handles_labels()[0] for ax in
