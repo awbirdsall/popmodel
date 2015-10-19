@@ -654,6 +654,13 @@ class KineticsRun(object):
 
             self.time_progress += 1
 
+        # avoid any weirdness with nan values popping up by silently converting
+        # to 0.
+        if self.odepar['keep_pop_full'] == True:
+            self.pop_full= np.nan_to_num(self.pop_full)
+        else:
+            self.pop_abbrev = np.nan_to_num(self.pop_abbrev)
+        
         self.logger.info('solveode: done with integration')
 
     def laspos(self):
