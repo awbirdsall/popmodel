@@ -159,7 +159,17 @@ POWER_UV = 50e-3    # W, Schlosser et al 2007, average power
 REPRATE_UV = 8.5e3    # Hz, Fuchs et al. 2012
 PERIOD_UV = 1/REPRATE_UV    # s
 PULSEWIDTH_UV = 30e-9    #s, somewhat arbitrary, Fuchs et al. report 25 ns pulse
-PEAK_POWER_UV = POWER_UV * PERIOD_UV/PULSEWIDTH_UV # W, peak power
+
+def peakpower(avgpower, pulsewidth, reprate):
+    '''Calculate peak power for a pulsed laser given average power, laser
+    period, and pulse width.'''
+    if pulsewidth is not None and reprate is not None:
+        return avgpower/(pulsewidth*reprate)
+    else:
+        raise ValueError('require non-None pulsewidth and reprate values for ',
+                         'peakpower calc')
+
+PEAK_POWER_UV = peakpower(POWER_UV, PULSEWIDTH_UV, REPRATE_UV) # W, peak power
 
 # Beam parameters
 A_IR = pi*(.5*BEAM_DIAM_IR)**2 # beam area, m^2

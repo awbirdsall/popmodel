@@ -1320,9 +1320,12 @@ def getendrng(ratetype):
 def intensity(timearray, laser):
     '''Calculate spec intensity of laser at given array of times.
 
-    Assumes total integration time less than rep rate. Does not account for
-    reduction in usable laser power if laser bandwidth is broader than
-    linewidth.
+    Assumes total integration time less than rep rate. Converts provided power
+    to peak power if the laser is pulsed. Linearly scales down the laser
+    intensity used to calculate the excitation rate by the factor that the
+    laser bandwidth (from laser parameters) is broader than the linewidth
+    (fwhm). Does not account for reduction in usable laser power if laser
+    bandwidth is broader than linewidth.
     '''
     timearray = np.asarray(timearray)
     scalar_input = False
@@ -1331,14 +1334,23 @@ def intensity(timearray, laser):
         scalar_input = True
     intensities = np.zeros_like(timearray)
     area = np.pi*(laser['diam']*0.5)**2
-    spec_intensity = oh.spec_intensity(laser['power'],
-                                       area,
-                                       laser['bandwidth'])
     if not laser['pulse']:
+        spec_intensity = oh.spec_intensity(laser['power'],
+                                           area,
+                                           laser['bandwidth'])
         intensities.fill(spec_intensity)
     else:
+        # edge case where laser['pulse'] is not None but laser['reprate'] is
+        # None, which is a malformed set of parameters, will lead to
+        # a ValueError being rased by oh.peakpower
         whenon = ((timearray > laser['delay']) &
                   (timearray < laser['pulse']+laser['delay']))
+        peakpower = oh.peakpower(laser['power'],
+                                 laser['pulse'],
+                                 laser['reprate'])
+        spec_intensity = oh.spec_intensity(peakpower,
+                                           area,
+                                           laser['bandwidth'])
         intensities[whenon] = spec_intensity
 
     if scalar_input:

@@ -3,8 +3,9 @@
 irlaser:
     diam: 5.e-3 # m
     bandwidth: 1.0e+6 # Hz
-    power: 3. # W
+    power: 0.01 # W, avg power for pulsed or CW
     pulse: 50.e-6 # s or null (for CW)
+    reprate: 8.5e+3 # Hz, or null for CW
     delay: 0.e-6 # s, ODE solver gets crashy if this is non-zero?
 
 # sweeping of narrow-bandwidth IR laser (optional)
@@ -25,6 +26,7 @@ uvlaser:
     bandwidth: 7.e+9 # Hz, Schlosser et al 2007
     power: 50.e-3 # W, Schlosser et al. 2007, avg power
     pulse: 75.e-6 # s or null (for CW)
+    reprate: 8.5e+3 # Hz, or null for CW
     delay: 25.e-6 # s
 
 odepar:
