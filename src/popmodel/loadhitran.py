@@ -244,8 +244,8 @@ def processhitran(hfile, scutoff=1e-20, vabmin=3250, vabmax=3800):
     ga = hdata['g_low']
     gb = hdata['g_up']
 
-    Bba = oh.b21(Aba, vab)
-    Bab = oh.b12(Aba, ga, gb, vab)
+    Bba = oh.b21(Aba, vab) # stim emission
+    Bab = oh.b12(Aba, ga, gb, vab) # absorption
 
     if hdata['molec_id'][0] == 13: # OH
         Na, Nb, Ja, Jb, label = extractnjlabel(hdata)
