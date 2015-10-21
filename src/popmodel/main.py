@@ -263,15 +263,19 @@ class KineticsRun(object):
         self.rates = rates
         # overwrite following subdictionaries for appropriate format for
         # d_pop_full: overall vibrational quenching rate from b:
-        self.rates['kqb']['tot'] = oh.kqavg(rates['kqb']['n2'],
-                                            rates['kqb']['o2'],
-                                            rates['kqb']['h2o'],
+        self.rates['vet_p1p0']['tot'] = oh.kqavg(rates['vet_p1p0']['n2'],
+                                            rates['vet_p1p0']['o2'],
+                                            rates['vet_p1p0']['h2o'],
                                             detcell['xh2o'])
         # vibrational quenching rate from c:
         self.rates['kqc']['tot'] = oh.kqavg(rates['kqc']['n2'],
                                             rates['kqc']['o2'],
                                             rates['kqc']['h2o'],
                                             self.detcell['xh2o'])
+        self.rates['vet_s1s0']['tot'] = oh.kqavg(rates['vet_s1s0']['n2'],
+                                                 rates['vet_s1s0']['o2'],
+                                                 rates['vet_s1s0']['h2o'],
+                                                 self.detcell['xh2o'])
         self.choosehline(hpar, irline)
         self.setupuvline()
         self.makerotfracarray()
@@ -467,7 +471,7 @@ class KineticsRun(object):
             fluor = self.rates['A']['10']
             # use 'kqc' rate as proxy for 'kqd'
             quench = (self.rates['kqc']['tot'] * self.detcell['Q'] +
-                      self.rates['kqd_vib'] * self.detcell['Q'])
+                      self.rates['vet_s1s0']['tot'] * self.detcell['Q'])
             if haslaser:
                 # stim_emit calcs
                 rot_factor = np.empty_like(self.tbins[timerange_s])
@@ -1243,7 +1247,7 @@ VIBRONICDICT = {'absorb_ir':['Bba',
                 #                  'pi_v0',
                 #                  'full',
                 #                  'full'],
-                'vib_quench_p1p0':[['kqb', 'tot'],
+                'vib_quench_p1p0':[['vet_p1p0', 'tot'],
                                    'quencher',
                                    'pi_v1',
                                    'pi_v0',
@@ -1285,7 +1289,7 @@ VIBRONICDICT = {'absorb_ir':['Bba',
                                    'pi_v1',
                                    'full',
                                    'full'],
-                'vib_quench_s1s0':[['kqc', 'tot'],
+                'vib_quench_s1s0':[['vet_s1s0', 'tot'],
                                    'quencher',
                                    'sigma_v1',
                                    'sigma_v0',

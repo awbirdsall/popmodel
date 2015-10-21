@@ -71,7 +71,7 @@ rates:
         !!str 11: 8.38e+5
         !!str 10: 5.11e+5
     # Quenching speciated by N2/O2/H2O: (s^-1/(molec cm^-3)):
-    kqb: # vibrational quenching from v"=1
+    vet_p1p0: # vibrational energy transfer from X(v"=1)
         n2: 1.5e-15 # Only one reported measurement (D'Ottone et al.), but
                     # this term is a minor contribution
         o2: 1.e-13 # Choose intermediate value between reported measurements
@@ -88,7 +88,11 @@ rates:
     #         # gets smaller with bigger N)
     #     o2: 13.5e-11 # Wysong et al. 1990, v'=0
     #     h2o: 68.0e-11 # Wysong et al. 1990, v'=0
-    kqd_vib: 1.0e-10 # vibrational quenching from A(v'=1) -> A(v'=0)
+    vet_s1s0: # vibrational energy transfer A(v'=1) -> A(v'=0), 
+        # 300 K thermal distribution in v'=1
+        n2: 2.3e-10 # all three constants from Williams and Crosley, JCP 1996
+        o2: 2.1e-11
+        h2o: 7.3e-11
     rrout: # rotational relaxation out of single rotational level (a/b/c)
     # Smith and Crosley, 1990 model rates. Undifferentiated by quencher or v.
         - 7.72e-10
