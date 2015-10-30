@@ -52,6 +52,7 @@ uvline:
     vib: '11' # vib bands: 11, 10, 00 (with appropriate withoutUV, withoutIR)
     rovib: 'P_1' # abbreviated version of `irline` label. See comment on irline
                  # for treatment of rotational states of UV transition.
+    g_air: 0.112 # pressure HWHM converted from Dorn et al. cm^-1/atm
 
 detcell: # detection cell
     press: 3 # torr

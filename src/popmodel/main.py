@@ -27,7 +27,8 @@ from . import absprofile as ap
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import ode
-from math import floor
+from scipy.stats import norm
+from math import floor, log
 import logging
 import yaml
 # Prefer CLoader to load yaml, see https://stackoverflow.com/q/18404441
@@ -243,7 +244,6 @@ class KineticsRun(object):
             # and have it be 1.
             self.sweep = lambda: None
             self.sweep.las_bins = np.zeros(1)
-
         # Instance attributes set up within KineticsRun.solveode():
         # times at which solveode() integration is calculated, s.
         self.tbins = None
@@ -279,8 +279,20 @@ class KineticsRun(object):
         self.choosehline(hpar, irline)
         self.setupuvline()
         self.makerotfracarray()
-        # set up self.abfeat AbsProfile
-        self.makeabs()
+        # use binwidth to determine resolution of irfeat. Until hard-coded
+        # match betwen sweep binwidth and laser bandwidth is teased apart, can
+        # only safely dynamically adjust binwidth to give appropriate
+        # resolution for lsfactor calculation for given pressure when dosweep
+        # is False. Otherwise, preserve resolution  originally passed in.
+        if sweep['dosweep']:
+            self.binwidth = sweep['binwidth']
+        else:
+            self.binwidth = 1.e6/760.*detcell['press']
+        # set up AbsProfiles and lsfactors
+        self.irfeat = self.makeir()
+        self.uvfeat = self.makeuv()
+        self.irlsfactor = calclsfactor(self.irfeat, self.irlaser)
+        self.uvlsfactor = calclsfactor(self.uvfeat, self.uvlaser)
 
     def choosehline(self, hpar, label):
         '''Save single line of processed HITRAN file to self.hline.
@@ -310,6 +322,15 @@ class KineticsRun(object):
         # same rot level of interest in 'c' and 'd'
         self.uvline['Nd'] = self.uvline['Nc']
 
+        # calculate degeneracy of uv_upper state, 2J+1
+        if self.uvline['rovib'][2] == '1':
+            j_upper = self.uvline['Nc']+0.5
+        elif self.uvline['rovib'][2] == '2':
+            j_upper = self.uvline['Nc']-0.5
+        else:
+            raise ValueError("malformed uvline['rovib']")
+        self.uvline['g_upper'] = 2*j_upper + 1
+
         # lookup uvline wavelength
         if self.odepar['withoutIR']:
             # lower-state energy determined by lower state of (turned-off)
@@ -334,7 +355,7 @@ class KineticsRun(object):
         self.rates['Bcb'] = oh.b21(self.rates['A'][self.uvline['vib']], vbc)
         self.rates['Bbc'] = oh.b12(self.rates['A'][self.uvline['vib']],
                                    self.hline['gb'],
-                                   oh.GC,
+                                   self.uvline['g_upper'],
                                    vbc)
         if not self.odepar['withoutUV']:
             self.logger.info('setupuvline: using %s line at %d cm^-1 (%.1f nm)',
@@ -361,15 +382,28 @@ class KineticsRun(object):
                                  oh.ROTFRAC['c'][self.uvline['Nc']],
                                  oh.ROTFRAC['d'][self.uvline['Nd']]])
 
-    def makeabs(self):
+    def makeir(self):
         '''Make an IR absorption profile using self.hline and experimental
         parameters.
         '''
         # Set up IR b<--a absorption profile
-        self.abfeat = ap.AbsProfile(wnum=self.hline['wnum_ab'])
-        self.abfeat.makeprofile(press=self.detcell['press'],
-                                T=self.detcell['temp'],
-                                g_air=self.hline['g_air'])
+        ir = ap.AbsProfile(wnum=self.hline['wnum_ab'],
+                                    binwidth = self.binwidth)
+        ir.makeprofile(press=self.detcell['press'],
+                       T=self.detcell['temp'],
+                       g_air=self.hline['g_air'],
+                       abswidth = self.detcell['press']*1.e9/300.)
+        return ir
+
+    def makeuv(self):
+        uv = ap.AbsProfile(wnum=self.uvline['wnum_uv'],
+                           binwidth = self.binwidth*100) # tends to be broader
+        uv.makeprofile(press=self.detcell['press'],
+                       T=self.detcell['temp'],
+                       g_air=self.uvline['g_air'],
+                       abswidth = self.detcell['press']*1.e11/300)
+        return uv
+
 
     def calcfluor(self, timerange=None, duringuvpulse=False):
         '''Calculate average fluorescence (photons/s) over given time interval.
@@ -444,12 +478,8 @@ class KineticsRun(object):
                 idx_zeros = rot_denom == 0
                 rot_factor[~idx_zeros] = (rot_num[~idx_zeros] /
                                           rot_denom[~idx_zeros])
-                if self.irlaser['bandwidth'] > self.abfeat.fwhm:
-                    bwcorrect = self.abfeat.fwhm / self.irlaser['bandwidth']
-                else:
-                    bwcorrect = 1
                 stim_emit = (intensity(self.tbins[timerange_s], self.uvlaser) *
-                             self.rates['Bcb'] * rot_factor * bwcorrect)
+                             self.rates['Bcb'] * rot_factor)
             else:
                 stim_emit = 0
             qyield = fluor / (spont_emit + stim_emit + quench)
@@ -482,12 +512,8 @@ class KineticsRun(object):
                     [~idx_zeros] / self.pop_full[timerange_s, 3, :].sum(1)
                     [~idx_zeros]
                     )
-                if self.irlaser['bandwidth'] > self.abfeat.fwhm:
-                    bwcorrect = self.abfeat.fwhm / self.irlaser['bandwidth']
-                else:
-                    bwcorrect = 1
                 stim_emit = (intensity(self.tbins[timerange_s], self.uvlaser) *
-                             self.rates['Bcb'] * rot_factor * bwcorrect)
+                             self.rates['Bcb'] * rot_factor)
             else:
                 stim_emit = 0
             qyield = fluor / (spont_emit + stim_emit + quench)
@@ -544,7 +570,7 @@ class KineticsRun(object):
                              self.sweep.stype)
 
             # Align bins for IR laser and absorbance features for integration
-            self.sweep.alignbins(self.abfeat)
+            self.sweep.alignbins(self.irfeat)
 
             # avg_bintime calced for 'sin'. 'saw' twice as long.
             avg_bintime = (self.sweep.tsweep /
@@ -589,20 +615,37 @@ class KineticsRun(object):
         # Create initial state pop_init, all pop distributed in ground state
         self.pop_init = np.zeros((self.nlevels, self.sweep.las_bins.size+3))
         if self.dosweep:
-            self.pop_init[0, 0:-3] = (self.abfeat.intpop * self.rotfrac[0] *
-                                      self.detcell['ohtot'] / 2)
+            p0 = self.detcell['ohtot']
+            self.pop_init[0, 0:-3] = (self.irfeat.intpop * self.rotfrac[0] *
+                                      p0 / 2)
             # pop outside laser sweep
-            self.pop_init[0, -3] = ((self.abfeat.pop.sum() -
-                                     self.abfeat.intpop.sum()) *
+            self.pop_init[0, -3] = ((self.irfeat.pop.sum() -
+                                     self.irfeat.intpop.sum()) *
                                     self.rotfrac[0] *
-                                    self.detcell['ohtot'] / 2)
+                                    p0 / 2)
         else:
-            self.pop_init[0, 0] = self.detcell['ohtot'] * self.rotfrac[0] / 2
+            if self.irlaser['pulse'] is None:
+                # start at steady-state for CW IR laser with UV laser off
+                excite = self.ratecoeff('ir_laser', 1.e-9)*self.rates['Bab']
+                emit = self.ratecoeff('ir_laser', 1.e-9)*self.rates['Bba']
+                laserfrac = 0.5*self.rotfrac[0]
+                vetrate = self.rates['vet_p1p0']['tot']*self.detcell['Q']
+                ratio = excite*laserfrac/(emit*laserfrac+vetrate)
+                p1 = (ratio*self.detcell['ohtot'])/(1 + ratio)
+                p0 = self.detcell['ohtot'] - p1
+                # set up X(v"=1) with same distribution
+                self.pop_init[1, 0] = p1 * self.rotfrac[0] / 2
+                self.pop_init[1, -3] = 0
+                self.pop_init[1, -2] = p1 * self.rotfrac[0] / 2
+                self.pop_init[1, -1] = p1 * (1-self.rotfrac[0])
+            else:
+                p0 = self.detcell['ohtot']
+            self.pop_init[0, 0] = p0 * self.rotfrac[0] / 2
             self.pop_init[0, -3] = 0 # no pop outside laser bandwidth
         # other half of lambda doublet
-        self.pop_init[0, -2] = self.detcell['ohtot'] * self.rotfrac[0] / 2
+        self.pop_init[0, -2] = p0 * self.rotfrac[0] / 2
         # other rot
-        self.pop_init[0, -1] = self.detcell['ohtot'] * (1-self.rotfrac[0])
+        self.pop_init[0, -1] = p0 * (1-self.rotfrac[0])
 
         # Create array to store output at each timestep, depending on
         # keep_pop_full:
@@ -813,27 +856,21 @@ class KineticsRun(object):
         # flatten to 1D array as required
         return result.ravel()
 
-
     def ratecoeff(self, ratetype, t):
         '''Value to multiply base rate by to get first-order rate constant.
 
         Time-dependent when 'coeff' is pulsed laser intensity. Account for
-        possible case of IR laser bandwidth broader than linewidth by
-        multiplying by ratio of FWHM values. Do not correct for laser bandwidth
-        narrower than linewidth because of postulated homogeneous line
-        broadening (i.e., hole-burning not an issue).
+        extent of lineshape overlap for IR laser with self.lsfactor.
         '''
         if ratetype == 'ir_laser':
-            if self.irlaser['bandwidth'] > self.abfeat.fwhm:
-                bwcorrect = self.abfeat.fwhm / self.irlaser['bandwidth']
-            else:
-                bwcorrect = 1
-            coeff = intensity(t, self.irlaser) * bwcorrect
+            coeff = intensity(t, self.irlaser) * self.irlsfactor
         elif ratetype == 'uv_laser':
-            coeff = intensity(t, self.uvlaser)
+            coeff = intensity(t, self.uvlaser) * self.uvlsfactor
         elif ratetype == 'quencher':
             coeff = self.detcell['Q']
         else:
+            # TODO this is dangerous! silently falls back to 1 if there's
+            # a typo in ratetype (e.g., 'irlaser' instead of 'ir_laser')
             coeff = 1
         return coeff
 
@@ -1096,7 +1133,7 @@ class KineticsRun(object):
         '''Plot the calculated absorption feature in frequency space
 
         Requires KineticsRun instance with an Abs that makeProfile has been run
-        on (i.e., have self.abfeat.abs_freq and self.abfeat.pop)
+        on (i.e., have self.irfeat.abs_freq and self.irfeat.pop)
 
         Parameters
         ----------
@@ -1105,7 +1142,7 @@ class KineticsRun(object):
         KineticsRun instance to have a Sweep with self.sweep.las_bins array.
         '''
         fig, (ax0) = plt.subplots(nrows=1)
-        ax0.plot(self.abfeat.abs_freq/1e6, self.abfeat.pop)
+        ax0.plot(self.irfeat.abs_freq/1e6, self.irfeat.pop)
         ax0.set_title('Calculated absorption feature, '
                       + str(self.detcell['press']) +' torr')
         ax0.set_xlabel('Relative frequency (MHz)')
@@ -1158,14 +1195,14 @@ class KineticsRun(object):
                  las_bins=self.sweep.las_bins,
                  tbins=self.tbins,
                  sweepfunc=self.sweepfunc,
-                 abs_freq=self.abfeat.abs_freq,
-                 pop=self.abfeat.pop)
+                 abs_freq=self.irfeat.abs_freq,
+                 pop=self.irfeat.pop)
 
     def loadoutput(self, npzfile):
         '''Populate KineticsRun instance with results saved to npz file.
 
         Writes to values for pop_abbrev, sweep.las_bins, tbins, sweepfunc,
-        abfeat, abfeat.abs_freq and abfeat.pop.
+        irfeat, irfeat.abs_freq and irfeat.pop.
 
         Parameters
         ----------
@@ -1177,9 +1214,9 @@ class KineticsRun(object):
             self.sweep.las_bins = data['las_bins']
             self.tbins = data['tbins']
             self.sweepfunc = data['sweepfunc']
-            self.abfeat = ap.AbsProfile(wnum=self.hline['wnum_ab'])
-            self.abfeat.abs_freq = data['abs_freq']
-            self.abfeat.pop = data['pop']
+            self.irfeat = ap.AbsProfile(wnum=self.hline['wnum_ab'])
+            self.irfeat.abs_freq = data['abs_freq']
+            self.irfeat.pop = data['pop']
 
     # interpret ratetype parameters in terms of particular KineticsRun instance
     def baserate_k(self, ratetype):
@@ -1217,13 +1254,13 @@ SLICEDICT = {'rot_level': np.s_[:-1],
 # Name each entry with description of type of process, followed by suffix that
 # describes the transition: 'ir' or 'uv' if laser transition, 'p0', 'p1', 's0',
 # 's1' for v=0 or 1 level of pi (X) or sigma (A) state, respectively.
-VIBRONICDICT = {'absorb_ir':['Bba',
+VIBRONICDICT = {'absorb_ir':['Bab',
                              'ir_laser',
                              'pi_v0',
                              'pi_v1',
                              'las_bin',
                              'las_bin'],
-                'absorb_uv':['Bcb',
+                'absorb_uv':['Bbc',
                              'uv_laser',
                              'uv_lower',
                              'uv_upper',
@@ -1324,13 +1361,7 @@ def getendrng(ratetype):
 def intensity(timearray, laser):
     '''Calculate spec intensity of laser at given array of times.
 
-    Assumes total integration time less than rep rate. Converts provided power
-    to peak power if the laser is pulsed. Linearly scales down the laser
-    intensity used to calculate the excitation rate by the factor that the
-    laser bandwidth (from laser parameters) is broader than the linewidth
-    (fwhm). Does not account for reduction in usable laser power if laser
-    bandwidth is broader than linewidth.
-    '''
+    Converts provided power to peak power if the laser is pulsed.'''
     timearray = np.asarray(timearray)
     scalar_input = False
     if timearray.ndim == 0:
@@ -1343,12 +1374,9 @@ def intensity(timearray, laser):
                                            area,
                                            laser['bandwidth'])
         intensities.fill(spec_intensity)
-    else:
-        # edge case where laser['pulse'] is not None but laser['reprate'] is
-        # None, which is a malformed set of parameters, will lead to
-        # a ValueError being rased by oh.peakpower
-        whenon = ((timearray > laser['delay']) &
-                  (timearray < laser['pulse']+laser['delay']))
+    elif laser['reprate'] is not None:
+        whenon = ((timearray%laser['reprate'] > laser['delay']) &
+                  (timearray%laser['reprate'] < laser['pulse']+laser['delay']))
         peakpower = oh.peakpower(laser['power'],
                                  laser['pulse'],
                                  laser['reprate'])
@@ -1356,6 +1384,8 @@ def intensity(timearray, laser):
                                            area,
                                            laser['bandwidth'])
         intensities[whenon] = spec_intensity
+    else:
+        raise ValueError('malformed laser parameters')
 
     if scalar_input:
         return np.squeeze(intensities)
@@ -1390,7 +1420,7 @@ def internalrate(ylevel, ratecon, equildist, ratetype):
         rngin = np.s_[0:-2]
         rngout = np.s_[-2]
     else:
-        ValueError('ratetype needs to be \'rot\' or \'lambda\'')
+        raise ValueError('ratetype needs to be \'rot\' or \'lambda\'')
 
     if ylevel[rngin].sum() != 0:
         term[rngin] = (-ylevel[rngin] * ratecon[0] +
@@ -1400,3 +1430,25 @@ def internalrate(ylevel, ratecon, equildist, ratetype):
     else:
         term.fill(0)
     return term
+
+def calclsfactor(line, laser):
+    '''Calculate factor in laser excitation rate due to lineshapes.
+    
+    Assumes the peaks of the two lineshapes are perfectly aligned.
+
+    Treat factor as separate from the inherent "intensity" of the laser
+    calculated by the `intensity` function. Instead, it modulates the
+    intensity in `ratecoeff`.
+
+    See notes and 15_linewidth_factor_laser_excitation.ipynb for detailed
+    derivation of factor. Requires integral of product of normalized
+    absorption feature and laser lineshape profiles.'''
+    # calculate Gaussian IR lineshape, converting from FWHM to std dev.
+    lasershape = norm.pdf(line.abs_freq,
+                          scale=laser['bandwidth']/(2*(2*log(2))**0.5))
+    # line.pop includes the frequency differential baked in
+    integral = (lasershape * line.pop).sum()
+    # laser bandwidth term "undoes" the spectral part of the spectral
+    # intensity calculation
+    lsfactor = integral * laser['bandwidth']
+    return lsfactor

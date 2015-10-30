@@ -277,8 +277,8 @@ def b12(a21, g_lower, g_upper, freq):
     b12 : float (or 1D numpy array)
     Einstein B coefficient for absorption, m^2 J^-1 s^-1.
     '''
-    b12_coeff = (np.array(g_lower).astype(float)/
-                 np.array(g_upper).astype(float) *
+    b12_coeff = (np.array(g_upper).astype(float)/
+                 np.array(g_lower).astype(float) *
                  b21(a21, freq))
     return b12_coeff
 
