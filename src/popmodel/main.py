@@ -834,6 +834,8 @@ class KineticsRun(object):
         elif ratetype == 'quencher':
             coeff = self.detcell['Q']
         else:
+            # TODO this is dangerous! silently falls back to 1 if there's
+            # a typo in ratetype (e.g., 'irlaser' instead of 'ir_laser')
             coeff = 1
         return coeff
 
