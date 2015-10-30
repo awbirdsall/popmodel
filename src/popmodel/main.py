@@ -1345,12 +1345,9 @@ def intensity(timearray, laser):
                                            area,
                                            laser['bandwidth'])
         intensities.fill(spec_intensity)
-    else:
-        # edge case where laser['pulse'] is not None but laser['reprate'] is
-        # None, which is a malformed set of parameters, will lead to
-        # a ValueError being rased by oh.peakpower
-        whenon = ((timearray > laser['delay']) &
-                  (timearray < laser['pulse']+laser['delay']))
+    elif laser['reprate'] is not None:
+        whenon = ((timearray%laser['reprate'] > laser['delay']) &
+                  (timearray%laser['reprate'] < laser['pulse']+laser['delay']))
         peakpower = oh.peakpower(laser['power'],
                                  laser['pulse'],
                                  laser['reprate'])
@@ -1358,6 +1355,8 @@ def intensity(timearray, laser):
                                            area,
                                            laser['bandwidth'])
         intensities[whenon] = spec_intensity
+    else:
+        raise ValueError('malformed laser parameters')
 
     if scalar_input:
         return np.squeeze(intensities)
