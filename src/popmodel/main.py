@@ -453,12 +453,8 @@ class KineticsRun(object):
                 idx_zeros = rot_denom == 0
                 rot_factor[~idx_zeros] = (rot_num[~idx_zeros] /
                                           rot_denom[~idx_zeros])
-                if self.irlaser['bandwidth'] > self.abfeat.fwhm:
-                    bwcorrect = self.abfeat.fwhm / self.irlaser['bandwidth']
-                else:
-                    bwcorrect = 1
                 stim_emit = (intensity(self.tbins[timerange_s], self.uvlaser) *
-                             self.rates['Bcb'] * rot_factor * bwcorrect)
+                             self.rates['Bcb'] * rot_factor)
             else:
                 stim_emit = 0
             qyield = fluor / (spont_emit + stim_emit + quench)
@@ -491,12 +487,8 @@ class KineticsRun(object):
                     [~idx_zeros] / self.pop_full[timerange_s, 3, :].sum(1)
                     [~idx_zeros]
                     )
-                if self.irlaser['bandwidth'] > self.abfeat.fwhm:
-                    bwcorrect = self.abfeat.fwhm / self.irlaser['bandwidth']
-                else:
-                    bwcorrect = 1
                 stim_emit = (intensity(self.tbins[timerange_s], self.uvlaser) *
-                             self.rates['Bcb'] * rot_factor * bwcorrect)
+                             self.rates['Bcb'] * rot_factor)
             else:
                 stim_emit = 0
             qyield = fluor / (spont_emit + stim_emit + quench)
