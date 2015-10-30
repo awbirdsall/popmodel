@@ -1391,7 +1391,7 @@ def internalrate(ylevel, ratecon, equildist, ratetype):
         rngin = np.s_[0:-2]
         rngout = np.s_[-2]
     else:
-        ValueError('ratetype needs to be \'rot\' or \'lambda\'')
+        raise ValueError('ratetype needs to be \'rot\' or \'lambda\'')
 
     if ylevel[rngin].sum() != 0:
         term[rngin] = (-ylevel[rngin] * ratecon[0] +
