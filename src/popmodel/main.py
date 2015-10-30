@@ -406,7 +406,9 @@ class KineticsRun(object):
 
 
     def calcfluor(self, timerange=None, duringuvpulse=False):
-        '''Calculate average fluorescence (photons/s) over given time interval.
+        '''Calculate total fluorescence counts over given time interval.
+
+        Without any arguments, will look at entire model run.
 
         Requires KineticsRun.solveode() to have been run, with
         KineticsRun.odepar['keep_pop_full'] = True.
@@ -423,7 +425,7 @@ class KineticsRun(object):
         Output
         ------
         avgfluorrate : float
-        Average fluorescence rate over time interval, photons/s.
+        Total fluorescence over time interval, photons.
         '''
 
         if self.pop_full is None:
@@ -449,89 +451,24 @@ class KineticsRun(object):
         else:
             timerange_s = np.s_[:]
 
-        v0fluor = self.nlevels == 3 or (self.nlevels == 4 and
-                                        self.detcell['fluorwl'] == '308')
-        v1fluor = self.nlevels == 4 and self.detcell['fluorwl'] == '282'
-        v1v0fluor = self.nlevels == 4 and self.detcell['fluorwl'] == 'both'
-
-        def calcv0fluor(haslaser):
-            '''Calculate fluorescence from A(v'=0).
-
-            Parameters
-            ----------
-            haslaser : Boolean
-            Whether laser excitation is into A(v'=0).
-            '''
-            fluorpop = self.pop_full[timerange_s, 2, :].sum(1)
-            spont_emit = self.rates['A']['00']
-            fluor = spont_emit
-            quench = self.rates['kqc']['tot'] * self.detcell['Q']
-            if haslaser:
-                # stim_emit needs to account for scaling by being only from
-                # single rotational level within "fluorpop" and being
-                # a function of time (whether uvlaser is on or not).
-                rot_factor = np.zeros_like(self.tbins[timerange_s])
-                # avoid divide-by-zero warning when rot_denom == 0
-                rot_num = self.pop_full[timerange_s, 2,
-                                        SLICEDICT['rot_level']].sum(1)
-                rot_denom = self.pop_full[timerange_s, 2, :].sum(1)
-                idx_zeros = rot_denom == 0
-                rot_factor[~idx_zeros] = (rot_num[~idx_zeros] /
-                                          rot_denom[~idx_zeros])
-                stim_emit = (intensity(self.tbins[timerange_s], self.uvlaser) *
-                             self.rates['Bcb'] * rot_factor)
-            else:
-                stim_emit = 0
-            qyield = fluor / (spont_emit + stim_emit + quench)
-            fluorescence = fluorpop * qyield
-            # finally, average over interval and report on per-second basis
-            v0fluor = fluorescence.mean() / self.odepar['dt']
-            return v0fluor
-
-        def calcv1fluor(haslaser):
-            '''Calculate fluorescence from A(v'=1).
-
-            Parameters
-            ----------
-            haslaser : Boolean
-            Whether laser excitation is into A(v'=1).
-            '''
-            fluorpop = self.pop_full[timerange_s, 3, :].sum(1)
-            spont_emit = self.rates['A']['10'] + self.rates['A']['11']
-            fluor = self.rates['A']['10']
-            # use 'kqc' rate as proxy for 'kqd'
-            quench = (self.rates['kqc']['tot'] * self.detcell['Q'] +
-                      self.rates['vet_s1s0']['tot'] * self.detcell['Q'])
-            if haslaser:
-                # stim_emit calcs
-                rot_factor = np.empty_like(self.tbins[timerange_s])
-                idx_zeros = self.pop_full[timerange_s, 3, :].sum(1) == 0
-                rot_factor[idx_zeros] = 0
-                rot_factor[~idx_zeros] = (
-                    self.pop_full[timerange_s, 3, SLICEDICT['rot_level']].sum(1)
-                    [~idx_zeros] / self.pop_full[timerange_s, 3, :].sum(1)
-                    [~idx_zeros]
-                    )
-                stim_emit = (intensity(self.tbins[timerange_s], self.uvlaser) *
-                             self.rates['Bcb'] * rot_factor)
-            else:
-                stim_emit = 0
-            qyield = fluor / (spont_emit + stim_emit + quench)
-            fluorescence = fluorpop * qyield
-            # finally, average over interval and report on per-second basis
-            v0fluor = fluorescence.mean() / self.odepar['dt']
-            return v0fluor
-
-        if v0fluor:
-            return calcv0fluor(haslaser=True)
-        elif v1fluor:
-            return calcv1fluor(haslaser=True)
-        elif v1v0fluor:
-            # cleanest to write as combination of v0fluor and v1fluor
-            return calcv0fluor(haslaser=False) + calcv1fluor(haslaser=True)
+        if self.nlevels == 3 or (self.nlevels == 4 and
+                self.detcell['fluorwl'] == '308'):
+            fluorrates = ['00']
+        elif self.nlevels == 4 and self.detcell['fluorwl'] == '282':
+            fluorrates = ['10']
+        elif self.nlevels == 4 and self.detcell['fluorwl'] == 'both':
+            fluorrates = ['00', '10']
         else:
             raise ValueError('fluorescence detection scheme could not be '
                              'determined.')
+
+        fluorcounts = 0.
+        for rate in fluorrates:
+            fluorlevel = int(rate[0]) + 2 # from A(v'=0) is index 2, from A(v'=1) is index 3
+            intpop = self.pop_full[timerange_s,fluorlevel,:].sum()*self.odepar['dt']
+            fluorcounts = fluorcounts + intpop*self.rates['A'][rate]
+
+        return fluorcounts
 
     def solveode(self):
         '''Integrate ode describing two-photon LIF.
