@@ -310,6 +310,15 @@ class KineticsRun(object):
         # same rot level of interest in 'c' and 'd'
         self.uvline['Nd'] = self.uvline['Nc']
 
+        # calculate degeneracy of uv_upper state, 2J+1
+        if self.uvline['rovib'][2] == '1':
+            j_upper = self.uvline['Nc']+0.5
+        elif self.uvline['rovib'][2] == '2':
+            j_upper = self.uvline['Nc']-0.5
+        else:
+            raise ValueError("malformed uvline['rovib']")
+        self.uvline['g_upper'] = 2*j_upper + 1
+
         # lookup uvline wavelength
         if self.odepar['withoutIR']:
             # lower-state energy determined by lower state of (turned-off)
@@ -334,7 +343,7 @@ class KineticsRun(object):
         self.rates['Bcb'] = oh.b21(self.rates['A'][self.uvline['vib']], vbc)
         self.rates['Bbc'] = oh.b12(self.rates['A'][self.uvline['vib']],
                                    self.hline['gb'],
-                                   oh.GC,
+                                   self.uvline['g_upper'],
                                    vbc)
         if not self.odepar['withoutUV']:
             self.logger.info('setupuvline: using %s line at %d cm^-1 (%.1f nm)',
