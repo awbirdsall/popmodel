@@ -37,7 +37,7 @@ class AbsProfile(object):
         return 'Absorbance feature centered at '+str(self.wnum)+' cm^-1'
 
     def makeprofile(self, abswidth=1000.e6, press=oh.OP_PRESS, T=oh.TEMP,
-                    g_air=oh.G_AIR, mass=oh.MASS):
+                    g_air=oh.G_AIR, mass=oh.MASS, edgecutoff=0.01):
         ''' Use oh.voigt to create absorption profile.
 
         Writes to self.abs_freq and self.pop.
@@ -61,6 +61,11 @@ class AbsProfile(object):
 
         mass : float
         Mass of molecule of interest, kg. Defaults to ohcalcs value
+
+        edgecutoff : float
+        Cut-off for acceptable relative intensity at edge of profile compared
+        to peak. If relative intensity is larger than this value, Voigt profile
+        will be recalculated over a 50% broader frequency range.
         '''
         sigma = (kb*T / (mass*c**2))**(0.5)*self.freq # Gaussian std dev
 
@@ -77,7 +82,7 @@ class AbsProfile(object):
             raw_pop = oh.voigt(abs_freq, 1, 0, sigma, gamma, True)
             norm_factor = 1/np.sum(raw_pop)
             pop = raw_pop * norm_factor # makes sum of pops = 1.
-            if pop[0] >= 0.01*np.max(pop):
+            if pop[0] >= edgecutoff*np.max(pop):
                 abswidth = abswidth*1.5
             else:
                 enoughwidth = True
