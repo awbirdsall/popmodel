@@ -27,7 +27,8 @@ from . import absprofile as ap
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import ode
-from math import floor
+from scipy.stats import norm
+from math import floor, log
 import logging
 import yaml
 # Prefer CLoader to load yaml, see https://stackoverflow.com/q/18404441
@@ -243,7 +244,6 @@ class KineticsRun(object):
             # and have it be 1.
             self.sweep = lambda: None
             self.sweep.las_bins = np.zeros(1)
-
         # Instance attributes set up within KineticsRun.solveode():
         # times at which solveode() integration is calculated, s.
         self.tbins = None
@@ -288,9 +288,11 @@ class KineticsRun(object):
             self.binwidth = sweep['binwidth']
         else:
             self.binwidth = 1.e6/760.*detcell['press']
-        # set up AbsProfiles
+        # set up AbsProfiles and lsfactors
         self.irfeat = self.makeir()
         self.uvfeat = self.makeuv()
+        self.irlsfactor = calclsfactor(self.irfeat, self.irlaser)
+        self.uvlsfactor = calclsfactor(self.uvfeat, self.uvlaser)
 
     def choosehline(self, hpar, label):
         '''Save single line of processed HITRAN file to self.hline.
@@ -854,24 +856,16 @@ class KineticsRun(object):
         # flatten to 1D array as required
         return result.ravel()
 
-
     def ratecoeff(self, ratetype, t):
         '''Value to multiply base rate by to get first-order rate constant.
 
         Time-dependent when 'coeff' is pulsed laser intensity. Account for
-        possible case of IR laser bandwidth broader than linewidth by
-        multiplying by ratio of FWHM values. Do not correct for laser bandwidth
-        narrower than linewidth because of postulated homogeneous line
-        broadening (i.e., hole-burning not an issue).
+        extent of lineshape overlap for IR laser with self.lsfactor.
         '''
         if ratetype == 'ir_laser':
-            if self.irlaser['bandwidth'] > self.abfeat.fwhm:
-                bwcorrect = self.irfeat.fwhm / self.irlaser['bandwidth']
-            else:
-                bwcorrect = 1
-            coeff = intensity(t, self.irlaser) * bwcorrect
+            coeff = intensity(t, self.irlaser) * self.irlsfactor
         elif ratetype == 'uv_laser':
-            coeff = intensity(t, self.uvlaser)
+            coeff = intensity(t, self.uvlaser) * self.uvlsfactor
         elif ratetype == 'quencher':
             coeff = self.detcell['Q']
         else:
@@ -1367,13 +1361,7 @@ def getendrng(ratetype):
 def intensity(timearray, laser):
     '''Calculate spec intensity of laser at given array of times.
 
-    Assumes total integration time less than rep rate. Converts provided power
-    to peak power if the laser is pulsed. Linearly scales down the laser
-    intensity used to calculate the excitation rate by the factor that the
-    laser bandwidth (from laser parameters) is broader than the linewidth
-    (fwhm). Does not account for reduction in usable laser power if laser
-    bandwidth is broader than linewidth.
-    '''
+    Converts provided power to peak power if the laser is pulsed.'''
     timearray = np.asarray(timearray)
     scalar_input = False
     if timearray.ndim == 0:
@@ -1442,3 +1430,25 @@ def internalrate(ylevel, ratecon, equildist, ratetype):
     else:
         term.fill(0)
     return term
+
+def calclsfactor(line, laser):
+    '''Calculate factor in laser excitation rate due to lineshapes.
+    
+    Assumes the peaks of the two lineshapes are perfectly aligned.
+
+    Treat factor as separate from the inherent "intensity" of the laser
+    calculated by the `intensity` function. Instead, it modulates the
+    intensity in `ratecoeff`.
+
+    See notes and 15_linewidth_factor_laser_excitation.ipynb for detailed
+    derivation of factor. Requires integral of product of normalized
+    absorption feature and laser lineshape profiles.'''
+    # calculate Gaussian IR lineshape, converting from FWHM to std dev.
+    lasershape = norm.pdf(line.abs_freq,
+                          scale=laser['bandwidth']/(2*(2*log(2))**0.5))
+    # line.pop includes the frequency differential baked in
+    integral = (lasershape * line.pop).sum()
+    # laser bandwidth term "undoes" the spectral part of the spectral
+    # intensity calculation
+    lsfactor = integral * laser['bandwidth']
+    return lsfactor
