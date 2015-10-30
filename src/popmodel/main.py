@@ -279,8 +279,17 @@ class KineticsRun(object):
         self.choosehline(hpar, irline)
         self.setupuvline()
         self.makerotfracarray()
-        # set up self.abfeat AbsProfile
-        self.makeabs()
+        # use binwidth to determine resolution of irfeat. Until hard-coded
+        # match betwen sweep binwidth and laser bandwidth is teased apart, can
+        # only safely dynamically adjust binwidth to give appropriate
+        # resolution for lsfactor calculation for given pressure when dosweep
+        # is False. Otherwise, preserve resolution  originally passed in.
+        if sweep['dosweep']:
+            self.binwidth = sweep['binwidth']
+        else:
+            self.binwidth = 1.e6/760.*detcell['press']
+        # set up self.irfeat AbsProfile
+        self.irfeat = self.makeir()
 
     def choosehline(self, hpar, label):
         '''Save single line of processed HITRAN file to self.hline.
@@ -370,15 +379,18 @@ class KineticsRun(object):
                                  oh.ROTFRAC['c'][self.uvline['Nc']],
                                  oh.ROTFRAC['d'][self.uvline['Nd']]])
 
-    def makeabs(self):
+    def makeir(self):
         '''Make an IR absorption profile using self.hline and experimental
         parameters.
         '''
         # Set up IR b<--a absorption profile
-        self.abfeat = ap.AbsProfile(wnum=self.hline['wnum_ab'])
-        self.abfeat.makeprofile(press=self.detcell['press'],
-                                T=self.detcell['temp'],
-                                g_air=self.hline['g_air'])
+        ir = ap.AbsProfile(wnum=self.hline['wnum_ab'],
+                                    binwidth = self.binwidth)
+        ir.makeprofile(press=self.detcell['press'],
+                       T=self.detcell['temp'],
+                       g_air=self.hline['g_air'],
+                       abswidth = self.detcell['press']*1.e9/300.)
+        return ir
 
     def calcfluor(self, timerange=None, duringuvpulse=False):
         '''Calculate average fluorescence (photons/s) over given time interval.
@@ -545,7 +557,7 @@ class KineticsRun(object):
                              self.sweep.stype)
 
             # Align bins for IR laser and absorbance features for integration
-            self.sweep.alignbins(self.abfeat)
+            self.sweep.alignbins(self.irfeat)
 
             # avg_bintime calced for 'sin'. 'saw' twice as long.
             avg_bintime = (self.sweep.tsweep /
@@ -594,8 +606,8 @@ class KineticsRun(object):
             self.pop_init[0, 0:-3] = (self.irfeat.intpop * self.rotfrac[0] *
                                       p0 / 2)
             # pop outside laser sweep
-            self.pop_init[0, -3] = ((self.abfeat.pop.sum() -
-                                     self.abfeat.intpop.sum()) *
+            self.pop_init[0, -3] = ((self.irfeat.pop.sum() -
+                                     self.irfeat.intpop.sum()) *
                                     self.rotfrac[0] *
                                     p0 / 2)
         else:
@@ -843,7 +855,7 @@ class KineticsRun(object):
         '''
         if ratetype == 'ir_laser':
             if self.irlaser['bandwidth'] > self.abfeat.fwhm:
-                bwcorrect = self.abfeat.fwhm / self.irlaser['bandwidth']
+                bwcorrect = self.irfeat.fwhm / self.irlaser['bandwidth']
             else:
                 bwcorrect = 1
             coeff = intensity(t, self.irlaser) * bwcorrect
@@ -1116,7 +1128,7 @@ class KineticsRun(object):
         '''Plot the calculated absorption feature in frequency space
 
         Requires KineticsRun instance with an Abs that makeProfile has been run
-        on (i.e., have self.abfeat.abs_freq and self.abfeat.pop)
+        on (i.e., have self.irfeat.abs_freq and self.irfeat.pop)
 
         Parameters
         ----------
@@ -1125,7 +1137,7 @@ class KineticsRun(object):
         KineticsRun instance to have a Sweep with self.sweep.las_bins array.
         '''
         fig, (ax0) = plt.subplots(nrows=1)
-        ax0.plot(self.abfeat.abs_freq/1e6, self.abfeat.pop)
+        ax0.plot(self.irfeat.abs_freq/1e6, self.irfeat.pop)
         ax0.set_title('Calculated absorption feature, '
                       + str(self.detcell['press']) +' torr')
         ax0.set_xlabel('Relative frequency (MHz)')
@@ -1178,14 +1190,14 @@ class KineticsRun(object):
                  las_bins=self.sweep.las_bins,
                  tbins=self.tbins,
                  sweepfunc=self.sweepfunc,
-                 abs_freq=self.abfeat.abs_freq,
-                 pop=self.abfeat.pop)
+                 abs_freq=self.irfeat.abs_freq,
+                 pop=self.irfeat.pop)
 
     def loadoutput(self, npzfile):
         '''Populate KineticsRun instance with results saved to npz file.
 
         Writes to values for pop_abbrev, sweep.las_bins, tbins, sweepfunc,
-        abfeat, abfeat.abs_freq and abfeat.pop.
+        irfeat, irfeat.abs_freq and irfeat.pop.
 
         Parameters
         ----------
@@ -1197,9 +1209,9 @@ class KineticsRun(object):
             self.sweep.las_bins = data['las_bins']
             self.tbins = data['tbins']
             self.sweepfunc = data['sweepfunc']
-            self.abfeat = ap.AbsProfile(wnum=self.hline['wnum_ab'])
-            self.abfeat.abs_freq = data['abs_freq']
-            self.abfeat.pop = data['pop']
+            self.irfeat = ap.AbsProfile(wnum=self.hline['wnum_ab'])
+            self.irfeat.abs_freq = data['abs_freq']
+            self.irfeat.pop = data['pop']
 
     # interpret ratetype parameters in terms of particular KineticsRun instance
     def baserate_k(self, ratetype):
