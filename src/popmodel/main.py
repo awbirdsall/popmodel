@@ -590,20 +590,37 @@ class KineticsRun(object):
         # Create initial state pop_init, all pop distributed in ground state
         self.pop_init = np.zeros((self.nlevels, self.sweep.las_bins.size+3))
         if self.dosweep:
-            self.pop_init[0, 0:-3] = (self.abfeat.intpop * self.rotfrac[0] *
-                                      self.detcell['ohtot'] / 2)
+            p0 = self.detcell['ohtot']
+            self.pop_init[0, 0:-3] = (self.irfeat.intpop * self.rotfrac[0] *
+                                      p0 / 2)
             # pop outside laser sweep
             self.pop_init[0, -3] = ((self.abfeat.pop.sum() -
                                      self.abfeat.intpop.sum()) *
                                     self.rotfrac[0] *
-                                    self.detcell['ohtot'] / 2)
+                                    p0 / 2)
         else:
-            self.pop_init[0, 0] = self.detcell['ohtot'] * self.rotfrac[0] / 2
+            if self.irlaser['pulse'] is None:
+                # start at steady-state for CW IR laser with UV laser off
+                excite = self.ratecoeff('ir_laser', 1.e-9)*self.rates['Bab']
+                emit = self.ratecoeff('ir_laser', 1.e-9)*self.rates['Bba']
+                laserfrac = 0.5*self.rotfrac[0]
+                vetrate = self.rates['vet_p1p0']['tot']*self.detcell['Q']
+                ratio = excite*laserfrac/(emit*laserfrac+vetrate)
+                p1 = (ratio*self.detcell['ohtot'])/(1 + ratio)
+                p0 = self.detcell['ohtot'] - p1
+                # set up X(v"=1) with same distribution
+                self.pop_init[1, 0] = p1 * self.rotfrac[0] / 2
+                self.pop_init[1, -3] = 0
+                self.pop_init[1, -2] = p1 * self.rotfrac[0] / 2
+                self.pop_init[1, -1] = p1 * (1-self.rotfrac[0])
+            else:
+                p0 = self.detcell['ohtot']
+            self.pop_init[0, 0] = p0 * self.rotfrac[0] / 2
             self.pop_init[0, -3] = 0 # no pop outside laser bandwidth
         # other half of lambda doublet
-        self.pop_init[0, -2] = self.detcell['ohtot'] * self.rotfrac[0] / 2
+        self.pop_init[0, -2] = p0 * self.rotfrac[0] / 2
         # other rot
-        self.pop_init[0, -1] = self.detcell['ohtot'] * (1-self.rotfrac[0])
+        self.pop_init[0, -1] = p0 * (1-self.rotfrac[0])
 
         # Create array to store output at each timestep, depending on
         # keep_pop_full:
