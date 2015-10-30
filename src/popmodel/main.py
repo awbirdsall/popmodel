@@ -288,8 +288,9 @@ class KineticsRun(object):
             self.binwidth = sweep['binwidth']
         else:
             self.binwidth = 1.e6/760.*detcell['press']
-        # set up self.irfeat AbsProfile
+        # set up AbsProfiles
         self.irfeat = self.makeir()
+        self.uvfeat = self.makeuv()
 
     def choosehline(self, hpar, label):
         '''Save single line of processed HITRAN file to self.hline.
@@ -391,6 +392,16 @@ class KineticsRun(object):
                        g_air=self.hline['g_air'],
                        abswidth = self.detcell['press']*1.e9/300.)
         return ir
+
+    def makeuv(self):
+        uv = ap.AbsProfile(wnum=self.uvline['wnum_uv'],
+                           binwidth = self.binwidth*100) # tends to be broader
+        uv.makeprofile(press=self.detcell['press'],
+                       T=self.detcell['temp'],
+                       g_air=self.uvline['g_air'],
+                       abswidth = self.detcell['press']*1.e11/300)
+        return uv
+
 
     def calcfluor(self, timerange=None, duringuvpulse=False):
         '''Calculate average fluorescence (photons/s) over given time interval.
