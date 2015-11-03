@@ -638,11 +638,19 @@ class KineticsRun(object):
 
             self.time_progress += 1
 
-        # avoid any weirdness with nan values popping up by silently converting
-        # to 0.
+        # Sometimes the solution at the very last time step blows up/crashes to
+        # 0. Check that population is conserved and drop last point if
+        # necessary. Also avoid any weirdness with nan values popping up by
+        # silently converting to 0.
         if self.odepar['keep_pop_full'] == True:
-            self.pop_full= np.nan_to_num(self.pop_full)
+            if not(np.isclose(self.pop_full[0].sum(),self.pop_full[-1].sum())):
+                self.pop_full = self.pop_full[:-1]
+                self.tbins = self.tbins[:-1]
+            self.pop_full = np.nan_to_num(self.pop_full)
         else:
+            if not(np.isclose(self.pop_abbrev[0].sum(),self.pop_abbrev[-1].sum())):
+                self.pop_abbrev = self.pop_abbrev[:-1]
+                self.tbins = self.tbins[:-1]
             self.pop_abbrev = np.nan_to_num(self.pop_abbrev)
         
         self.logger.info('solveode: done with integration')
