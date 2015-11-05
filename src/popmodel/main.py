@@ -104,10 +104,10 @@ def automate(hitfile, parameters, logfile=None, csvout=None, image=None,
 class KineticsRun(object):
     '''Full model of OH population kinetics: laser, feature and populations.
 
-    If IR laser is swept, has single instance of Sweep, describing laser
-    dithering, and of AbsProfile, describing absorption feature. Sweep is made
-    in __init__, while AbsProfile is made after the HITRAN file is imported and
-    the absorption feature selected.
+    If IR laser is swept, has single instance of Sweep, describing IR laser
+    dithering. Also has two AbsProfile instances, irfeat and uvfeat, describing
+    absorption features. All are made on initialization of KineticsRun
+    instance.
     '''
     def __init__(self, hpar, irlaser, sweep, uvlaser, odepar, irline, uvline,
                  detcell, rates):
