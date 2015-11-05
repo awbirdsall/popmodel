@@ -816,10 +816,10 @@ class KineticsRun(object):
             coeff = intensity(t, self.uvlaser) * self.uvlsfactor
         elif ratetype == 'quencher':
             coeff = self.detcell['Q']
-        else:
-            # TODO this is dangerous! silently falls back to 1 if there's
-            # a typo in ratetype (e.g., 'irlaser' instead of 'ir_laser')
+        elif ratetype == 'first_order':
             coeff = 1
+        else:
+            raise ValueError('invalid ratetype')
         return coeff
 
     def vibronicprocesses(self, y, t):
@@ -1251,25 +1251,25 @@ VIBRONICDICT = {'absorb_ir':['Bab',
                                     'full',
                                     'full'],
                 'spont_emit_s0p0':[['A', '00'],
-                                   None,
+                                   'first_order',
                                    'sigma_v0',
                                    'pi_v0',
                                    'full',
                                    'full'],
                 'spont_emit_s0p1':[['A', '01'],
-                                   None,
+                                   'first_order',
                                    'sigma_v0',
                                    'pi_v1',
                                    'full',
                                    'full'],
                 'spont_emit_s1p0':[['A', '10'],
-                                   None,
+                                   'first_order',
                                    'sigma_v1',
                                    'pi_v0',
                                    'full',
                                    'full'],
                 'spont_emit_s1p1':[['A', '11'],
-                                   None,
+                                   'first_order',
                                    'sigma_v1',
                                    'pi_v1',
                                    'full',
