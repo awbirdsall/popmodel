@@ -264,9 +264,9 @@ class KineticsRun(object):
         # overwrite following subdictionaries for appropriate format for
         # d_pop_full: overall vibrational quenching rate from b:
         self.rates['vet_p1p0']['tot'] = oh.kqavg(rates['vet_p1p0']['n2'],
-                                            rates['vet_p1p0']['o2'],
-                                            rates['vet_p1p0']['h2o'],
-                                            detcell['xh2o'])
+                                                 rates['vet_p1p0']['o2'],
+                                                 rates['vet_p1p0']['h2o'],
+                                                 detcell['xh2o'])
         # vibrational quenching rate from c:
         self.rates['kqc']['tot'] = oh.kqavg(rates['kqc']['n2'],
                                             rates['kqc']['o2'],
@@ -387,21 +387,22 @@ class KineticsRun(object):
         parameters.
         '''
         # Set up IR b<--a absorption profile
-        ir = ap.AbsProfile(wnum=self.hline['wnum_ab'],
-                                    binwidth = self.binwidth)
+        ir = ap.AbsProfile(wnum=self.hline['wnum_ab'], binwidth=self.binwidth)
         ir.makeprofile(press=self.detcell['press'],
                        T=self.detcell['temp'],
                        g_air=self.hline['g_air'],
-                       abswidth = self.detcell['press']*1.e9/300.)
+                       abswidth=self.detcell['press']*1.e9/300.)
         return ir
 
     def makeuv(self):
+        '''Make a UV absorption profile using self.uvline and self.detcell.
+        '''
         uv = ap.AbsProfile(wnum=self.uvline['wnum_uv'],
-                           binwidth = self.binwidth*100) # tends to be broader
+                           binwidth=self.binwidth*100) # tends to be broader
         uv.makeprofile(press=self.detcell['press'],
                        T=self.detcell['temp'],
                        g_air=self.uvline['g_air'],
-                       abswidth = self.detcell['press']*1.e11/300)
+                       abswidth=self.detcell['press']*1.e11/300)
         return uv
 
 
@@ -452,7 +453,7 @@ class KineticsRun(object):
             timerange_s = np.s_[:]
 
         if self.nlevels == 3 or (self.nlevels == 4 and
-                self.detcell['fluorwl'] == '308'):
+                                 self.detcell['fluorwl'] == '308'):
             fluorrates = ['00']
         elif self.nlevels == 4 and self.detcell['fluorwl'] == '282':
             fluorrates = ['10']
@@ -465,7 +466,8 @@ class KineticsRun(object):
         fluorcounts = 0.
         for rate in fluorrates:
             fluorlevel = int(rate[0]) + 2 # from A(v'=0) is index 2, from A(v'=1) is index 3
-            intpop = self.pop_full[timerange_s,fluorlevel,:].sum()*self.odepar['dt']
+            intpop = (self.pop_full[timerange_s, fluorlevel, :].sum()*
+                      self.odepar['dt'])
             fluorcounts = fluorcounts + intpop*self.rates['A'][rate]
 
         return fluorcounts
@@ -600,7 +602,7 @@ class KineticsRun(object):
 
         # Initialize scipy.integrate.ode object, lsoda method
         r = ode(self.d_pop_full)
-        # r.set_integrator('vode',nsteps=500,method='bdf')
+        # r.set_integrator('vode',order=15, nsteps=500,method='bdf')
         r.set_integrator('lsoda', with_jacobian=False,)
         r.set_initial_value(list(self.pop_init.ravel()), 0)
 
@@ -643,16 +645,17 @@ class KineticsRun(object):
         # necessary. Also avoid any weirdness with nan values popping up by
         # silently converting to 0.
         if self.odepar['keep_pop_full'] == True:
-            if not(np.isclose(self.pop_full[0].sum(),self.pop_full[-1].sum())):
+            if not np.isclose(self.pop_full[0].sum(), self.pop_full[-1].sum()):
                 self.pop_full = self.pop_full[:-1]
                 self.tbins = self.tbins[:-1]
             self.pop_full = np.nan_to_num(self.pop_full)
         else:
-            if not(np.isclose(self.pop_abbrev[0].sum(),self.pop_abbrev[-1].sum())):
+            if not np.isclose(self.pop_abbrev[0].sum(),
+                              self.pop_abbrev[-1].sum()):
                 self.pop_abbrev = self.pop_abbrev[:-1]
                 self.tbins = self.tbins[:-1]
             self.pop_abbrev = np.nan_to_num(self.pop_abbrev)
-        
+
         self.logger.info('solveode: done with integration')
 
     def laspos(self):
@@ -961,7 +964,7 @@ class KineticsRun(object):
                 raise NameError("improper plotcode ", plotcode)
 
         ax0.set_title(title)
-        ax0.set_xlabel('Time ($\mu$s)')
+        ax0.set_xlabel(r'Time ($\mu$s)')
         ax0.set_ylabel('pi state pops (a or b)')
         ax0.set_xlim((0, self.odepar['inttime']*1e6))
 
@@ -1069,7 +1072,7 @@ class KineticsRun(object):
         else:
             ax1.plot(x_usec, self.tbins*0)
         ax1.set_title('Position of IR beam')
-        ax1.set_xlabel('Time ($\mu$s)')
+        ax1.set_xlabel(r'Time ($\mu$s)')
         ax1.set_ylabel('Relative Frequency (MHz)')
 
         return fig
@@ -1378,7 +1381,7 @@ def internalrate(ylevel, ratecon, equildist, ratetype):
 
 def calclsfactor(line, laser):
     '''Calculate factor in laser excitation rate due to lineshapes.
-    
+
     Assumes the peaks of the two lineshapes are perfectly aligned.
 
     Treat factor as separate from the inherent "intensity" of the laser
