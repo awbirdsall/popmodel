@@ -277,7 +277,7 @@ class KineticsRun(object):
                          self.irline['label'], self.irline['wnum_ab'])
 
         # add additional keys to self.uvline
-        self.setupuvline()
+        self._setupuvline()
 
         # add Einstein B coefficencies to self.rates
         self.rates['Bba'] = self.irline['Bba']
@@ -297,7 +297,7 @@ class KineticsRun(object):
                                    vbc)
 
         # lookup fractional population in rotational states of interest
-        self.rotfrac = self.makerotfracarray()
+        self.rotfrac = self._makerotfracarray()
         # use binwidth to determine resolution of irfeat. Until hard-coded
         # match betwen sweep binwidth and laser bandwidth is teased apart, can
         # only safely dynamically adjust binwidth to give appropriate
@@ -309,12 +309,12 @@ class KineticsRun(object):
             self.binwidth = 1.e6/760.*detcell['press']
 
         # set up AbsProfiles and lsfactors
-        self.irfeat = self.makeirfeat()
-        self.uvfeat = self.makeuvfeat()
+        self.irfeat = self._makeirfeat()
+        self.uvfeat = self._makeuvfeat()
         self.irlsfactor = calclsfactor(self.irfeat, self.irlaser)
         self.uvlsfactor = calclsfactor(self.uvfeat, self.uvlaser)
 
-    def setupuvline(self):
+    def _setupuvline(self):
         '''Set up KineticsRun instance parameters related to UV transition.
         '''
         # could refactor this lookup to avoid duplicating same thing in
@@ -325,7 +325,7 @@ class KineticsRun(object):
             self.uvline['Nc'] = self.irline['Na'] + uv_Ndiff
         elif self.levels.get('uv_lower') == 1:
             self.uvline['Nc'] = self.irline['Nb'] + uv_Ndiff
-        else: # just need dummy placeholder for makerotfracarray
+        else: # just need dummy placeholder for _makerotfracarray
             self.uvline['Nc'] = 1
         # same rot level of interest in 'c' and 'd'
         self.uvline['Nd'] = self.uvline['Nc']
@@ -359,7 +359,7 @@ class KineticsRun(object):
                              self.uvline['wnum_uv'],
                              oh.c/vbc*1e9)
 
-    def makerotfracarray(self):
+    def _makerotfracarray(self):
         '''Make array of equilibrium rotational pops.
 
         Requires self.irline and self.uvline to already be created. Array has
@@ -379,7 +379,7 @@ class KineticsRun(object):
                                  oh.ROTFRAC['d'][self.uvline['Nd']]])
         return rotfrac
 
-    def makeirfeat(self):
+    def _makeirfeat(self):
         '''Make an IR absorption profile using self.irline and experimental
         parameters.
         '''
@@ -392,7 +392,7 @@ class KineticsRun(object):
                            abswidth=self.detcell['press']*1.e9/300.)
         return irfeat
 
-    def makeuvfeat(self):
+    def _makeuvfeat(self):
         '''Make a UV absorption profile using self.uvline and self.detcell.
         '''
         uvfeat = ap.AbsProfile(wnum=self.uvline['wnum_uv'],
@@ -608,7 +608,7 @@ class KineticsRun(object):
         self.logger.info('------------------------')
 
         # Solve ODE
-        self.time_progress = 0 # laspos looks at this to choose sweepfunc index
+        self.time_progress = 0 # _laspos looks at this to choose sweepfunc index
         old_complete = 0 # track integration progress for self.logger
         while r.successful() and r.t < tl-dt:
             # display progress
@@ -656,7 +656,7 @@ class KineticsRun(object):
 
         self.logger.info('solveode: done with integration')
 
-    def laspos(self):
+    def _laspos(self):
         '''Determine position of IR laser at current integration time.
 
         Function of state of self.time_progress, self.sweepfunc and
@@ -671,7 +671,7 @@ class KineticsRun(object):
         '''
         voigt_pos = self.sweepfunc[self.time_progress]
         if voigt_pos+1 > self.sweep.las_bins.size:
-            self.logger.warning('laspos: voigt_pos out of range')
+            self.logger.warning('_laspos: voigt_pos out of range')
         return voigt_pos
 
     def d_pop_full(self, t, y):
@@ -781,7 +781,7 @@ class KineticsRun(object):
         Dictionary of relevant vibronic rates, keyed by name in VIBRONICDICT.
         '''
         vibronicratedict = {process: self.ratearray(process, y, t) for
-                            process in VIBRONICDICT if self.included(process)}
+                            process in VIBRONICDICT if self._included(process)}
         return vibronicratedict
 
     def ratearray(self, process, y, t):
@@ -804,13 +804,13 @@ class KineticsRun(object):
         Calculated array of rates, with same shape as y.
         '''
         rarray = np.zeros_like(y)
-        startlevel_idx = self.startlevel_lookup(process)
-        startrng_idx = self.getrngidx(getstartrng(process))()
-        endlevel_idx = self.endlevel_lookup(process)
-        endrng_idx = self.getrngidx(getendrng(process))()
+        startlevel_idx = self._startlevel_lookup(process)
+        startrng_idx = self._getrngidx(_getstartrng(process))()
+        endlevel_idx = self._endlevel_lookup(process)
+        endrng_idx = self._getrngidx(_getendrng(process))()
 
-        base = self.baserate_k(process)
-        coeff = self.ratecoeff(coefftype(process), t)
+        base = self._baserate_k(process)
+        coeff = self.ratecoeff(_coefftype(process), t)
         conc = y[startlevel_idx, startrng_idx]
         rate = base*coeff*conc
         # for vibronic process, startrng = endrng
@@ -818,26 +818,26 @@ class KineticsRun(object):
         rarray[endlevel_idx, endrng_idx] = rate
         return rarray
 
-    def included(self, proc):
+    def _included(self, proc):
         '''Determine whether a VIBRONICDICT process should be included.
         '''
-        if coefftype(proc) == 'ir_laser' and self.odepar['withoutIR'] == True:
+        if _coefftype(proc) == 'ir_laser' and self.odepar['withoutIR'] == True:
             return False
-        elif (coefftype(proc) == 'uv_laser' and
+        elif (_coefftype(proc) == 'uv_laser' and
               self.odepar['withoutUV'] == True):
             return False
         else:
-            to_include = (startlevel(proc) in self.levels and
-                          endlevel(proc) in self.levels)
+            to_include = (_startlevel(proc) in self.levels and
+                          _endlevel(proc) in self.levels)
             return to_include
 
-    def getrngidx(self, rnglabel):
+    def _getrngidx(self, rnglabel):
         '''Look up slice for named range within level
 
         Returns an unbound function because las_bin location is function of
         time.
         '''
-        rng = {'las_bin': self.laspos,
+        rng = {'las_bin': self._laspos,
                'half_lambda': lambda: np.s_[:-2],
                'rot_level': lambda: np.s_[:-1],
                'rot_other': lambda: np.s_[-1],
@@ -1106,18 +1106,18 @@ class KineticsRun(object):
             self.irfeat.pop = data['pop']
 
     # interpret ratetype parameters in terms of particular KineticsRun instance
-    def baserate_k(self, ratetype):
+    def _baserate_k(self, ratetype):
         '''Look up rate constant for ratetype within KineticsRun.rates
         '''
-        return _getnested(baserate(ratetype), self.rates)
-    def startlevel_lookup(self, ratetype):
+        return _getnested(_baserate(ratetype), self.rates)
+    def _startlevel_lookup(self, ratetype):
         '''Look up initial vibronic level index for ratetype.
         '''
-        return self.levels[startlevel(ratetype)]
-    def endlevel_lookup(self, ratetype):
+        return self.levels[_startlevel(ratetype)]
+    def _endlevel_lookup(self, ratetype):
         '''Look up final vibronic level index for ratetype.
         '''
-        return self.levels[endlevel(ratetype)]
+        return self.levels[_endlevel(ratetype)]
 
 def _getnested(keys, nesteddict):
     '''Access data in nested dict using a list of keys.'''
@@ -1220,27 +1220,27 @@ VIBRONICDICT = {'absorb_ir':['Bab',
                                    'full',
                                    'full']}
 # accessors for VIBRONICDICT
-def baserate(ratetype):
+def _baserate(ratetype):
     '''Access string of rate constant for ratetype in VIBRONICDICT.
     '''
     return VIBRONICDICT[ratetype][0]
-def coefftype(ratetype):
+def _coefftype(ratetype):
     '''Access string of coefficient for ratetype in VIBRONICDICT.
     '''
     return VIBRONICDICT[ratetype][1]
-def startlevel(ratetype):
+def _startlevel(ratetype):
     '''Access string of starting vibronic level for ratetype in VIBRONICDICT.
     '''
     return VIBRONICDICT[ratetype][2]
-def endlevel(ratetype):
+def _endlevel(ratetype):
     '''Access string of ending vibronic level for ratetype in VIBRONICDICT.
     '''
     return VIBRONICDICT[ratetype][3]
-def getstartrng(ratetype):
+def _getstartrng(ratetype):
     '''Access range within startlevel for ratetype in VIBRONICDICT.
     '''
     return VIBRONICDICT[ratetype][4]
-def getendrng(ratetype):
+def _getendrng(ratetype):
     '''Access range within endlevel for ratetype in VIBRONICDICT.
     '''
     return VIBRONICDICT[ratetype][5]
