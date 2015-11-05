@@ -14,7 +14,8 @@ Capabilities:
 - collect other physical and experimental parameters from ohcalcs
 - integrate ODE describing population in quantum states
 - consider populations both within and without rotational level of interest.
-- turn off UV laser calculations an option to save memory
+- configurable set-up (with/without UV and IR lasers, with/without full
+  population output)
 
 """
 
@@ -166,19 +167,14 @@ class KineticsRun(object):
         self.irlaser = irlaser
         self.uvlaser = uvlaser
         self.odepar = odepar
-        self.irline = irline
         self.uvline = uvline
 
         # Build dict self.levels of level names, using VIBRONICDICT
-        # nomenclature for name of keys. Each key points to a value
-        # corresponding to a particular vibronic state (0 = 'a', 1 = 'b',
-        # 2 = 'c', 3 = 'd'), which is the index used by arrays describing
-        # population (e.g., KineticsRun.pop_full)
-        self.levels = {}
-
-        # build list of levels in system
-        self.system = ['levela']
-        self.levels.update({'pi_v0': 0})
+        # nomenclature for keys. Each key points to an int corresponding to
+        # a particular vibronic state (0 = 'a', 1 = 'b', 2 = 'c', 3 = 'd'),
+        # which is the index used by arrays describing population (e.g.,
+        # KineticsRun.pop_full)
+        self.levels = ({'pi_v0': 0})
         if self.odepar['withoutIR']:
             # either no excitation at all or UV excitation from X(v"=0)
             if self.odepar['withoutUV']:
@@ -186,14 +182,13 @@ class KineticsRun(object):
             elif self.uvline['vib'][1] == '0':
                 # still include X(v"=1) for consistency and for possibility of
                 # relaxation to that level
-                self.system.append('levelb')
                 self.levels.update({'pi_v1': 1})
                 self.levels.update({'sigma_v0': 2, 'uv_lower': 0})
                 if self.uvline['vib'][0] == '0':
-                    self.system.append('levelc')
+                    self.nlevels = 3
                     self.levels.update({'uv_upper': 2})
                 elif self.uvline['vib'][0] == '1':
-                    self.system = self.system + ['levelc', 'leveld']
+                    self.nlevels = 4
                     self.levels.update({'sigma_v1': 3, 'uv_upper': 3})
                 else:
                     raise ValueError('Unsupported upper v\' of UV transition')
@@ -202,7 +197,6 @@ class KineticsRun(object):
                                  'originate in v\"=0')
         else:
             # either no UV excitation or UV excitation from X(v"=1)
-            self.system.append('levelb')
             self.levels.update({'pi_v1': 1})
             if self.odepar['withoutUV']:
                 pass
@@ -210,18 +204,16 @@ class KineticsRun(object):
                 # UV excitation into A(v'=0) OR A(v'=1)
                 self.levels.update({'sigma_v0': 2, 'uv_lower': 1})
                 if self.uvline['vib'][0] == '0':
-                    self.system.append('levelc')
+                    self.nlevels = 3
                     self.levels.update({'uv_upper': 2})
                 elif self.uvline['vib'][0] == '1':
-                    self.system = self.system + ['levelc', 'leveld']
+                    self.nlevels = 4
                     self.levels.update({'sigma_v1': 3, 'uv_upper': 3})
                 else:
                     raise ValueError('Unsupported upper v\' of UV transition')
             else:
                 raise ValueError('If withoutIR is False, uvline[\'vib\'] must '
                                  'originate in v\"=1')
-
-        self.nlevels = len(self.system)
 
         # Sweep object
         if sweep['dosweep']:
@@ -244,6 +236,7 @@ class KineticsRun(object):
             # and have it be 1.
             self.sweep = lambda: None
             self.sweep.las_bins = np.zeros(1)
+
         # Instance attributes set up within KineticsRun.solveode():
         # times at which solveode() integration is calculated, s.
         self.tbins = None
@@ -254,10 +247,11 @@ class KineticsRun(object):
         # compact array of integrated population dynamics, with two entries
         # within each vibronic level (within/without rot level of interest).
         self.pop_abbrev = None
-        # full array of integrated bins
+        # full initial array of populations at t=0
+        self.pop_init = None
+        # full output array of integrated bins
         if self.odepar['keep_pop_full']:
             self.pop_full = None
-            self.pop_init = None
 
         # extract invariant kinetics parameters
         self.rates = rates
@@ -276,9 +270,34 @@ class KineticsRun(object):
                                                  rates['vet_s1s0']['o2'],
                                                  rates['vet_s1s0']['h2o'],
                                                  self.detcell['xh2o'])
-        self.choosehline(hpar, irline)
+
+        # set up IR line
+        self.irline = hpar[hpar['label'] == irline][0] # only one label/line
+        self.logger.info('__init__: using %s line at %.4g cm^-1',
+                         self.irline['label'], self.irline['wnum_ab'])
+
+        # add additional keys to self.uvline
         self.setupuvline()
-        self.makerotfracarray()
+
+        # add Einstein B coefficencies to self.rates
+        self.rates['Bba'] = self.irline['Bba']
+        self.rates['Bab'] = self.irline['Bab']
+        # UV Einstein coefficients:
+        # Lookup A coefficient based on vibrational band.
+        # Have not implemented lookup based on rotational dependence of
+        # A coefficient. Crosley and Lengel 1975 says that factor is something
+        # like 1-BETA*J"(J"+1) for small J',J" where BETA is on order of 6e-4,
+        # meaning correction is on order of 0.99 for J"=3.5. Not an important
+        # correction for small J".
+        vbc = atm.WAVENUM_TO_HZ*self.uvline['wnum_uv']
+        self.rates['Bcb'] = oh.b21(self.rates['A'][self.uvline['vib']], vbc)
+        self.rates['Bbc'] = oh.b12(self.rates['A'][self.uvline['vib']],
+                                   self.irline['gb'],
+                                   self.uvline['g_upper'],
+                                   vbc)
+
+        # lookup fractional population in rotational states of interest
+        self.rotfrac = self.makerotfracarray()
         # use binwidth to determine resolution of irfeat. Until hard-coded
         # match betwen sweep binwidth and laser bandwidth is teased apart, can
         # only safely dynamically adjust binwidth to give appropriate
@@ -288,23 +307,12 @@ class KineticsRun(object):
             self.binwidth = sweep['binwidth']
         else:
             self.binwidth = 1.e6/760.*detcell['press']
+
         # set up AbsProfiles and lsfactors
-        self.irfeat = self.makeir()
-        self.uvfeat = self.makeuv()
+        self.irfeat = self.makeirfeat()
+        self.uvfeat = self.makeuvfeat()
         self.irlsfactor = calclsfactor(self.irfeat, self.irlaser)
         self.uvlsfactor = calclsfactor(self.uvfeat, self.uvlaser)
-
-    def choosehline(self, hpar, label):
-        '''Save single line of processed HITRAN file to self.hline.
-        '''
-        self.hline = hpar[hpar['label'] == label][0] # shouldn't be issue with
-                                                     # multiple lines, same
-                                                     # label
-        self.logger.info('choosehline: using %s line at %.4g cm^-1',
-                         self.hline['label'], self.hline['wnum_ab'])
-
-        self.rates['Bba'] = self.hline['Bba']
-        self.rates['Bab'] = self.hline['Bab']
 
     def setupuvline(self):
         '''Set up KineticsRun instance parameters related to UV transition.
@@ -314,9 +322,9 @@ class KineticsRun(object):
         br_dict = {'O':-2, 'P':-1, 'Q':0, 'R':1, 'S':2}
         uv_Ndiff = br_dict[self.uvline['rovib'][0]]
         if self.levels.get('uv_lower') == 0:
-            self.uvline['Nc'] = self.hline['Na'] + uv_Ndiff
+            self.uvline['Nc'] = self.irline['Na'] + uv_Ndiff
         elif self.levels.get('uv_lower') == 1:
-            self.uvline['Nc'] = self.hline['Nb'] + uv_Ndiff
+            self.uvline['Nc'] = self.irline['Nb'] + uv_Ndiff
         else: # just need dummy placeholder for makerotfracarray
             self.uvline['Nc'] = 1
         # same rot level of interest in 'c' and 'd'
@@ -335,28 +343,16 @@ class KineticsRun(object):
         if self.odepar['withoutIR']:
             # lower-state energy determined by lower state of (turned-off)
             # infrared transition...
-            E_uv_lower = self.hline['E_low']
+            E_uv_lower = self.irline['E_low']
         else:
-            E_uv_lower = self.hline['E_low'] + self.hline['wnum_ab']
+            E_uv_lower = self.irline['E_low'] + self.irline['wnum_ab']
         vib_upper = int(self.uvline['vib'][0])
         self.uvline['wnum_uv'] = oh.calculateuv(self.uvline['Nc'],
                                                 vib_upper,
                                                 int(self.uvline['rovib'][2]),
                                                 E_uv_lower)
 
-        # UV Einstein coefficients:
-        # Lookup A coefficient based on vibrational band.
-        # Have not implemented lookup based on rotational dependence of
-        # A coefficient. Crosley and Lengel 1975 says that factor is something
-        # like 1-BETA*J"(J"+1) for small J',J" where BETA is on order of 6e-4,
-        # meaning correction is on order of 0.99 for J"=3.5. Not an important
-        # correction for small J".
         vbc = atm.WAVENUM_TO_HZ*self.uvline['wnum_uv']
-        self.rates['Bcb'] = oh.b21(self.rates['A'][self.uvline['vib']], vbc)
-        self.rates['Bbc'] = oh.b12(self.rates['A'][self.uvline['vib']],
-                                   self.hline['gb'],
-                                   self.uvline['g_upper'],
-                                   vbc)
         if not self.odepar['withoutUV']:
             self.logger.info('setupuvline: using %s line at %d cm^-1 (%.1f nm)',
                              self.uvline['rovib'],
@@ -364,46 +360,48 @@ class KineticsRun(object):
                              oh.c/vbc*1e9)
 
     def makerotfracarray(self):
-        '''Make KineticsRun.rotfrac array of equilibrium rotational pops.
+        '''Make array of equilibrium rotational pops.
 
-        Writes result to self.rotfrac. Requires self.hline and self.uvline to
-        already be created. Array has values for a through d vibronic states,
-        regardless of self.nlevels. Avoid any issues with size mismatch by
-        zipping through vibronic levels and rotfrac arrays as appropriate.
+        Requires self.irline and self.uvline to already be created. Array has
+        values for a through d vibronic states, regardless of self.nlevels.
+        Avoid any issues with size mismatch by zipping through vibronic levels
+        and rotfrac arrays as appropriate.
         '''
         # figure out which 'F1' or 'F2' series that a and b state are:
-        f_a = int(self.hline['label'][2]) - 1
-        if self.hline['label'][3] == '(': # i.e., not '12' or '21' line
+        f_a = int(self.irline['label'][2]) - 1
+        if self.irline['label'][3] == '(': # i.e., not '12' or '21' line
             f_b = f_a
         else:
-            f_b = int(self.hline['label'][3]) - 1
-        self.rotfrac = np.array([oh.ROTFRAC['a'][f_a][self.hline['Na']-1],
-                                 oh.ROTFRAC['b'][f_b][self.hline['Nb']-1],
+            f_b = int(self.irline['label'][3]) - 1
+        rotfrac = np.array([oh.ROTFRAC['a'][f_a][self.irline['Na']-1],
+                                 oh.ROTFRAC['b'][f_b][self.irline['Nb']-1],
                                  oh.ROTFRAC['c'][self.uvline['Nc']],
                                  oh.ROTFRAC['d'][self.uvline['Nd']]])
+        return rotfrac
 
-    def makeir(self):
-        '''Make an IR absorption profile using self.hline and experimental
+    def makeirfeat(self):
+        '''Make an IR absorption profile using self.irline and experimental
         parameters.
         '''
         # Set up IR b<--a absorption profile
-        ir = ap.AbsProfile(wnum=self.hline['wnum_ab'], binwidth=self.binwidth)
-        ir.makeprofile(press=self.detcell['press'],
-                       T=self.detcell['temp'],
-                       g_air=self.hline['g_air'],
-                       abswidth=self.detcell['press']*1.e9/300.)
-        return ir
+        irfeat = ap.AbsProfile(wnum=self.irline['wnum_ab'],
+                               binwidth=self.binwidth)
+        irfeat.makeprofile(press=self.detcell['press'],
+                           T=self.detcell['temp'],
+                           g_air=self.irline['g_air'],
+                           abswidth=self.detcell['press']*1.e9/300.)
+        return irfeat
 
-    def makeuv(self):
+    def makeuvfeat(self):
         '''Make a UV absorption profile using self.uvline and self.detcell.
         '''
-        uv = ap.AbsProfile(wnum=self.uvline['wnum_uv'],
-                           binwidth=self.binwidth*100) # tends to be broader
-        uv.makeprofile(press=self.detcell['press'],
-                       T=self.detcell['temp'],
-                       g_air=self.uvline['g_air'],
-                       abswidth=self.detcell['press']*1.e11/300)
-        return uv
+        uvfeat = ap.AbsProfile(wnum=self.uvline['wnum_uv'],
+                               binwidth=self.binwidth*100) # tends to be broader
+        uvfeat.makeprofile(press=self.detcell['press'],
+                           T=self.detcell['temp'],
+                           g_air=self.uvline['g_air'],
+                           abswidth=self.detcell['press']*1.e11/300)
+        return uvfeat
 
 
     def calcfluor(self, timerange=None, duringuvpulse=False):
@@ -1162,7 +1160,7 @@ class KineticsRun(object):
             self.sweep.las_bins = data['las_bins']
             self.tbins = data['tbins']
             self.sweepfunc = data['sweepfunc']
-            self.irfeat = ap.AbsProfile(wnum=self.hline['wnum_ab'])
+            self.irfeat = ap.AbsProfile(wnum=self.irline['wnum_ab'])
             self.irfeat.abs_freq = data['abs_freq']
             self.irfeat.pop = data['pop']
 
@@ -1196,12 +1194,12 @@ SLICEDICT = {'rot_level': np.s_[:-1],
              'half_lambda': np.s_[:-2],
              'full': np.s_[:]}
 # Form of VIBRONICDICT:
-# rate constant, 'concentration' it needs to be multiplied by (or `None` if
+# rate constant, 'coefftype' it needs to be multiplied by (or `'first_order' if
 # first-order), initial level, final level, initial range (within level), final
-# range.
-# Name each entry with description of type of process, followed by suffix that
-# describes the transition: 'ir' or 'uv' if laser transition, 'p0', 'p1', 's0',
-# 's1' for v=0 or 1 level of pi (X) or sigma (A) state, respectively.
+# range.  Name each entry with description of type of process, followed by
+# suffix that describes the transition: 'ir' or 'uv' if laser transition, 'p0',
+# 'p1', 's0', 's1' for v=0 or 1 level of pi (X) or sigma (A) state,
+# respectively.
 VIBRONICDICT = {'absorb_ir':['Bab',
                              'ir_laser',
                              'pi_v0',
