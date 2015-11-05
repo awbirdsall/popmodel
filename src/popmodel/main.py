@@ -714,65 +714,6 @@ class KineticsRun(object):
         else:
             fdist_array = np.zeros((y.shape[0], y.shape[1] - 1))
 
-        # someday idea: cleaner implementation of 'internal' processes
-
-        # # within d_pop_full
-        # if self.solveode['rotequil']:
-        #     rotarray = self.rotprocesses(y, t)
-        # else:
-        #     rotarray = np.zeros_like(y)
-        # if self.solveode['lambdaequil']:
-        #     lambdaarray = self.lambdaprocesses(y, t)
-        # else:
-        #     lambdaarray = np.zeros_like(y)
-        # internalarray = rotarray + lambdaarray
-        # ratearray = vibronicarray + internalarray
-        # return ratearray
-
-        # def lambdaprocesses(self, y, t):
-        #     levellambdarates = []
-        #     for level in self.system:
-        #         if level.term == 'pi':
-        #             levelrate = makeinternalrate('lambda')
-        #         elif level.term == 'sigma':
-        #             levelrate = np.zeros_like(level)
-        #         levellambdarates.append(levelrate)
-        #     return np.vstack(levellambdarates)
-
-        # def rotprocesses(self, y, t):
-        #     levelrotrates = []
-        #     for level in self.system:
-        #         if level.term == 'pi':
-        #             levelrate = makeinternalrate('rot_pi')
-        #         elif level.term == 'sigma':
-        #             levelrate = makeinternalrate('rot_sigma')
-        #     return np.vstack(levelrotrates)
-
-        # def self.makeinternalrate(ratetype, yl, equildist):
-        #     internalrate = np.zeros_like(yl)
-        #     baserate = INTERNAL_DICT[ratetype][0]
-        #     ratecoeff = INTERNAL_DICT[ratetype][1]
-        #     startrng = getrange(INTERNAL_DICT[ratetype][2])
-        #     endrng = getrange(INTERNAL_DICT[ratetype][3])
-        #     individuatedrates = (- yl[startrng] * baserate + yl[rngout]
-        #         * baserate_reverse * equildist)
-        #     internalrate[startrng] = individuatedrates
-        #     internalrate[endrng] = -individuatedrates.sum()
-        #     return internalrate
-
-# INTERNAL_DICT = {'rot_pi':[self.rates.rr,
-        #                    'quencher',
-        #                    'rot_level',
-        #                    'rot_other'],
-        #          'rot_sigma':[self.rates.rr,
-        #                       'quencher',
-        #                       'lambda_half',
-        #                       'rot_other'],
-        #          'lambda':[self.rates.lambda,
-        #                    'quencher',
-        #                    'lambda_half',
-        #                    'lambda_other']}
-
         # generate rates for each process
         # vibronic rates
         vibroniclist = self.vibronicprocesses(y, t)
