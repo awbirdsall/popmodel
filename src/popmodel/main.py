@@ -14,7 +14,8 @@ Capabilities:
 - collect other physical and experimental parameters from ohcalcs
 - integrate ODE describing population in quantum states
 - consider populations both within and without rotational level of interest.
-- turn off UV laser calculations an option to save memory
+- configurable set-up (with/without UV and IR lasers, with/without full
+  population output)
 
 """
 
@@ -166,19 +167,14 @@ class KineticsRun(object):
         self.irlaser = irlaser
         self.uvlaser = uvlaser
         self.odepar = odepar
-        self.irline = irline
         self.uvline = uvline
 
         # Build dict self.levels of level names, using VIBRONICDICT
-        # nomenclature for name of keys. Each key points to a value
-        # corresponding to a particular vibronic state (0 = 'a', 1 = 'b',
-        # 2 = 'c', 3 = 'd'), which is the index used by arrays describing
-        # population (e.g., KineticsRun.pop_full)
-        self.levels = {}
-
-        # build list of levels in system
-        self.system = ['levela']
-        self.levels.update({'pi_v0': 0})
+        # nomenclature for keys. Each key points to an int corresponding to
+        # a particular vibronic state (0 = 'a', 1 = 'b', 2 = 'c', 3 = 'd'),
+        # which is the index used by arrays describing population (e.g.,
+        # KineticsRun.pop_full)
+        self.levels = ({'pi_v0': 0})
         if self.odepar['withoutIR']:
             # either no excitation at all or UV excitation from X(v"=0)
             if self.odepar['withoutUV']:
@@ -186,14 +182,13 @@ class KineticsRun(object):
             elif self.uvline['vib'][1] == '0':
                 # still include X(v"=1) for consistency and for possibility of
                 # relaxation to that level
-                self.system.append('levelb')
                 self.levels.update({'pi_v1': 1})
                 self.levels.update({'sigma_v0': 2, 'uv_lower': 0})
                 if self.uvline['vib'][0] == '0':
-                    self.system.append('levelc')
+                    self.nlevels = 3
                     self.levels.update({'uv_upper': 2})
                 elif self.uvline['vib'][0] == '1':
-                    self.system = self.system + ['levelc', 'leveld']
+                    self.nlevels = 4
                     self.levels.update({'sigma_v1': 3, 'uv_upper': 3})
                 else:
                     raise ValueError('Unsupported upper v\' of UV transition')
@@ -202,7 +197,6 @@ class KineticsRun(object):
                                  'originate in v\"=0')
         else:
             # either no UV excitation or UV excitation from X(v"=1)
-            self.system.append('levelb')
             self.levels.update({'pi_v1': 1})
             if self.odepar['withoutUV']:
                 pass
@@ -210,18 +204,16 @@ class KineticsRun(object):
                 # UV excitation into A(v'=0) OR A(v'=1)
                 self.levels.update({'sigma_v0': 2, 'uv_lower': 1})
                 if self.uvline['vib'][0] == '0':
-                    self.system.append('levelc')
+                    self.nlevels = 3
                     self.levels.update({'uv_upper': 2})
                 elif self.uvline['vib'][0] == '1':
-                    self.system = self.system + ['levelc', 'leveld']
+                    self.nlevels = 4
                     self.levels.update({'sigma_v1': 3, 'uv_upper': 3})
                 else:
                     raise ValueError('Unsupported upper v\' of UV transition')
             else:
                 raise ValueError('If withoutIR is False, uvline[\'vib\'] must '
                                  'originate in v\"=1')
-
-        self.nlevels = len(self.system)
 
         # Sweep object
         if sweep['dosweep']:
@@ -244,6 +236,7 @@ class KineticsRun(object):
             # and have it be 1.
             self.sweep = lambda: None
             self.sweep.las_bins = np.zeros(1)
+
         # Instance attributes set up within KineticsRun.solveode():
         # times at which solveode() integration is calculated, s.
         self.tbins = None
@@ -254,19 +247,20 @@ class KineticsRun(object):
         # compact array of integrated population dynamics, with two entries
         # within each vibronic level (within/without rot level of interest).
         self.pop_abbrev = None
-        # full array of integrated bins
+        # full initial array of populations at t=0
+        self.pop_init = None
+        # full output array of integrated bins
         if self.odepar['keep_pop_full']:
             self.pop_full = None
-            self.pop_init = None
 
         # extract invariant kinetics parameters
         self.rates = rates
         # overwrite following subdictionaries for appropriate format for
         # d_pop_full: overall vibrational quenching rate from b:
         self.rates['vet_p1p0']['tot'] = oh.kqavg(rates['vet_p1p0']['n2'],
-                                            rates['vet_p1p0']['o2'],
-                                            rates['vet_p1p0']['h2o'],
-                                            detcell['xh2o'])
+                                                 rates['vet_p1p0']['o2'],
+                                                 rates['vet_p1p0']['h2o'],
+                                                 detcell['xh2o'])
         # vibrational quenching rate from c:
         self.rates['kqc']['tot'] = oh.kqavg(rates['kqc']['n2'],
                                             rates['kqc']['o2'],
@@ -276,9 +270,34 @@ class KineticsRun(object):
                                                  rates['vet_s1s0']['o2'],
                                                  rates['vet_s1s0']['h2o'],
                                                  self.detcell['xh2o'])
-        self.choosehline(hpar, irline)
-        self.setupuvline()
-        self.makerotfracarray()
+
+        # set up IR line
+        self.irline = hpar[hpar['label'] == irline][0] # only one label/line
+        self.logger.info('__init__: using %s line at %.4g cm^-1',
+                         self.irline['label'], self.irline['wnum_ab'])
+
+        # add additional keys to self.uvline
+        self._setupuvline()
+
+        # add Einstein B coefficencies to self.rates
+        self.rates['Bba'] = self.irline['Bba']
+        self.rates['Bab'] = self.irline['Bab']
+        # UV Einstein coefficients:
+        # Lookup A coefficient based on vibrational band.
+        # Have not implemented lookup based on rotational dependence of
+        # A coefficient. Crosley and Lengel 1975 says that factor is something
+        # like 1-BETA*J"(J"+1) for small J',J" where BETA is on order of 6e-4,
+        # meaning correction is on order of 0.99 for J"=3.5. Not an important
+        # correction for small J".
+        vbc = atm.WAVENUM_TO_HZ*self.uvline['wnum_uv']
+        self.rates['Bcb'] = oh.b21(self.rates['A'][self.uvline['vib']], vbc)
+        self.rates['Bbc'] = oh.b12(self.rates['A'][self.uvline['vib']],
+                                   self.irline['gb'],
+                                   self.uvline['g_upper'],
+                                   vbc)
+
+        # lookup fractional population in rotational states of interest
+        self.rotfrac = self._makerotfracarray()
         # use binwidth to determine resolution of irfeat. Until hard-coded
         # match betwen sweep binwidth and laser bandwidth is teased apart, can
         # only safely dynamically adjust binwidth to give appropriate
@@ -288,25 +307,14 @@ class KineticsRun(object):
             self.binwidth = sweep['binwidth']
         else:
             self.binwidth = 1.e6/760.*detcell['press']
+
         # set up AbsProfiles and lsfactors
-        self.irfeat = self.makeir()
-        self.uvfeat = self.makeuv()
+        self.irfeat = self._makeirfeat()
+        self.uvfeat = self._makeuvfeat()
         self.irlsfactor = calclsfactor(self.irfeat, self.irlaser)
         self.uvlsfactor = calclsfactor(self.uvfeat, self.uvlaser)
 
-    def choosehline(self, hpar, label):
-        '''Save single line of processed HITRAN file to self.hline.
-        '''
-        self.hline = hpar[hpar['label'] == label][0] # shouldn't be issue with
-                                                     # multiple lines, same
-                                                     # label
-        self.logger.info('choosehline: using %s line at %.4g cm^-1',
-                         self.hline['label'], self.hline['wnum_ab'])
-
-        self.rates['Bba'] = self.hline['Bba']
-        self.rates['Bab'] = self.hline['Bab']
-
-    def setupuvline(self):
+    def _setupuvline(self):
         '''Set up KineticsRun instance parameters related to UV transition.
         '''
         # could refactor this lookup to avoid duplicating same thing in
@@ -314,10 +322,10 @@ class KineticsRun(object):
         br_dict = {'O':-2, 'P':-1, 'Q':0, 'R':1, 'S':2}
         uv_Ndiff = br_dict[self.uvline['rovib'][0]]
         if self.levels.get('uv_lower') == 0:
-            self.uvline['Nc'] = self.hline['Na'] + uv_Ndiff
+            self.uvline['Nc'] = self.irline['Na'] + uv_Ndiff
         elif self.levels.get('uv_lower') == 1:
-            self.uvline['Nc'] = self.hline['Nb'] + uv_Ndiff
-        else: # just need dummy placeholder for makerotfracarray
+            self.uvline['Nc'] = self.irline['Nb'] + uv_Ndiff
+        else: # just need dummy placeholder for _makerotfracarray
             self.uvline['Nc'] = 1
         # same rot level of interest in 'c' and 'd'
         self.uvline['Nd'] = self.uvline['Nc']
@@ -335,74 +343,65 @@ class KineticsRun(object):
         if self.odepar['withoutIR']:
             # lower-state energy determined by lower state of (turned-off)
             # infrared transition...
-            E_uv_lower = self.hline['E_low']
+            E_uv_lower = self.irline['E_low']
         else:
-            E_uv_lower = self.hline['E_low'] + self.hline['wnum_ab']
+            E_uv_lower = self.irline['E_low'] + self.irline['wnum_ab']
         vib_upper = int(self.uvline['vib'][0])
         self.uvline['wnum_uv'] = oh.calculateuv(self.uvline['Nc'],
                                                 vib_upper,
                                                 int(self.uvline['rovib'][2]),
                                                 E_uv_lower)
 
-        # UV Einstein coefficients:
-        # Lookup A coefficient based on vibrational band.
-        # Have not implemented lookup based on rotational dependence of
-        # A coefficient. Crosley and Lengel 1975 says that factor is something
-        # like 1-BETA*J"(J"+1) for small J',J" where BETA is on order of 6e-4,
-        # meaning correction is on order of 0.99 for J"=3.5. Not an important
-        # correction for small J".
         vbc = atm.WAVENUM_TO_HZ*self.uvline['wnum_uv']
-        self.rates['Bcb'] = oh.b21(self.rates['A'][self.uvline['vib']], vbc)
-        self.rates['Bbc'] = oh.b12(self.rates['A'][self.uvline['vib']],
-                                   self.hline['gb'],
-                                   self.uvline['g_upper'],
-                                   vbc)
         if not self.odepar['withoutUV']:
             self.logger.info('setupuvline: using %s line at %d cm^-1 (%.1f nm)',
                              self.uvline['rovib'],
                              self.uvline['wnum_uv'],
                              oh.c/vbc*1e9)
 
-    def makerotfracarray(self):
-        '''Make KineticsRun.rotfrac array of equilibrium rotational pops.
+    def _makerotfracarray(self):
+        '''Make array of equilibrium rotational pops.
 
-        Writes result to self.rotfrac. Requires self.hline and self.uvline to
-        already be created. Array has values for a through d vibronic states,
-        regardless of self.nlevels. Avoid any issues with size mismatch by
-        zipping through vibronic levels and rotfrac arrays as appropriate.
+        Requires self.irline and self.uvline to already be created. Array has
+        values for a through d vibronic states, regardless of self.nlevels.
+        Avoid any issues with size mismatch by zipping through vibronic levels
+        and rotfrac arrays as appropriate.
         '''
         # figure out which 'F1' or 'F2' series that a and b state are:
-        f_a = int(self.hline['label'][2]) - 1
-        if self.hline['label'][3] == '(': # i.e., not '12' or '21' line
+        f_a = int(self.irline['label'][2]) - 1
+        if self.irline['label'][3] == '(': # i.e., not '12' or '21' line
             f_b = f_a
         else:
-            f_b = int(self.hline['label'][3]) - 1
-        self.rotfrac = np.array([oh.ROTFRAC['a'][f_a][self.hline['Na']-1],
-                                 oh.ROTFRAC['b'][f_b][self.hline['Nb']-1],
+            f_b = int(self.irline['label'][3]) - 1
+        rotfrac = np.array([oh.ROTFRAC['a'][f_a][self.irline['Na']-1],
+                                 oh.ROTFRAC['b'][f_b][self.irline['Nb']-1],
                                  oh.ROTFRAC['c'][self.uvline['Nc']],
                                  oh.ROTFRAC['d'][self.uvline['Nd']]])
+        return rotfrac
 
-    def makeir(self):
-        '''Make an IR absorption profile using self.hline and experimental
+    def _makeirfeat(self):
+        '''Make an IR absorption profile using self.irline and experimental
         parameters.
         '''
         # Set up IR b<--a absorption profile
-        ir = ap.AbsProfile(wnum=self.hline['wnum_ab'],
-                                    binwidth = self.binwidth)
-        ir.makeprofile(press=self.detcell['press'],
-                       T=self.detcell['temp'],
-                       g_air=self.hline['g_air'],
-                       abswidth = self.detcell['press']*1.e9/300.)
-        return ir
+        irfeat = ap.AbsProfile(wnum=self.irline['wnum_ab'],
+                               binwidth=self.binwidth)
+        irfeat.makeprofile(press=self.detcell['press'],
+                           T=self.detcell['temp'],
+                           g_air=self.irline['g_air'],
+                           abswidth=self.detcell['press']*1.e9/300.)
+        return irfeat
 
-    def makeuv(self):
-        uv = ap.AbsProfile(wnum=self.uvline['wnum_uv'],
-                           binwidth = self.binwidth*100) # tends to be broader
-        uv.makeprofile(press=self.detcell['press'],
-                       T=self.detcell['temp'],
-                       g_air=self.uvline['g_air'],
-                       abswidth = self.detcell['press']*1.e11/300)
-        return uv
+    def _makeuvfeat(self):
+        '''Make a UV absorption profile using self.uvline and self.detcell.
+        '''
+        uvfeat = ap.AbsProfile(wnum=self.uvline['wnum_uv'],
+                               binwidth=self.binwidth*100) # tends to be broader
+        uvfeat.makeprofile(press=self.detcell['press'],
+                           T=self.detcell['temp'],
+                           g_air=self.uvline['g_air'],
+                           abswidth=self.detcell['press']*1.e11/300)
+        return uvfeat
 
 
     def calcfluor(self, timerange=None, duringuvpulse=False):
@@ -452,7 +451,7 @@ class KineticsRun(object):
             timerange_s = np.s_[:]
 
         if self.nlevels == 3 or (self.nlevels == 4 and
-                self.detcell['fluorwl'] == '308'):
+                                 self.detcell['fluorwl'] == '308'):
             fluorrates = ['00']
         elif self.nlevels == 4 and self.detcell['fluorwl'] == '282':
             fluorrates = ['10']
@@ -465,7 +464,8 @@ class KineticsRun(object):
         fluorcounts = 0.
         for rate in fluorrates:
             fluorlevel = int(rate[0]) + 2 # from A(v'=0) is index 2, from A(v'=1) is index 3
-            intpop = self.pop_full[timerange_s,fluorlevel,:].sum()*self.odepar['dt']
+            intpop = (self.pop_full[timerange_s, fluorlevel, :].sum()*
+                      self.odepar['dt'])
             fluorcounts = fluorcounts + intpop*self.rates['A'][rate]
 
         return fluorcounts
@@ -600,7 +600,7 @@ class KineticsRun(object):
 
         # Initialize scipy.integrate.ode object, lsoda method
         r = ode(self.d_pop_full)
-        # r.set_integrator('vode',nsteps=500,method='bdf')
+        # r.set_integrator('vode',order=15, nsteps=500,method='bdf')
         r.set_integrator('lsoda', with_jacobian=False,)
         r.set_initial_value(list(self.pop_init.ravel()), 0)
 
@@ -608,7 +608,7 @@ class KineticsRun(object):
         self.logger.info('------------------------')
 
         # Solve ODE
-        self.time_progress = 0 # laspos looks at this to choose sweepfunc index
+        self.time_progress = 0 # _laspos looks at this to choose sweepfunc index
         old_complete = 0 # track integration progress for self.logger
         while r.successful() and r.t < tl-dt:
             # display progress
@@ -638,16 +638,25 @@ class KineticsRun(object):
 
             self.time_progress += 1
 
-        # avoid any weirdness with nan values popping up by silently converting
-        # to 0.
+        # Sometimes the solution at the very last time step blows up/crashes to
+        # 0. Check that population is conserved and drop last point if
+        # necessary. Also avoid any weirdness with nan values popping up by
+        # silently converting to 0.
         if self.odepar['keep_pop_full'] == True:
-            self.pop_full= np.nan_to_num(self.pop_full)
+            if not np.isclose(self.pop_full[0].sum(), self.pop_full[-1].sum()):
+                self.pop_full = self.pop_full[:-1]
+                self.tbins = self.tbins[:-1]
+            self.pop_full = np.nan_to_num(self.pop_full)
         else:
+            if not np.isclose(self.pop_abbrev[0].sum(),
+                              self.pop_abbrev[-1].sum()):
+                self.pop_abbrev = self.pop_abbrev[:-1]
+                self.tbins = self.tbins[:-1]
             self.pop_abbrev = np.nan_to_num(self.pop_abbrev)
-        
+
         self.logger.info('solveode: done with integration')
 
-    def laspos(self):
+    def _laspos(self):
         '''Determine position of IR laser at current integration time.
 
         Function of state of self.time_progress, self.sweepfunc and
@@ -662,7 +671,7 @@ class KineticsRun(object):
         '''
         voigt_pos = self.sweepfunc[self.time_progress]
         if voigt_pos+1 > self.sweep.las_bins.size:
-            self.logger.warning('laspos: voigt_pos out of range')
+            self.logger.warning('_laspos: voigt_pos out of range')
         return voigt_pos
 
     def d_pop_full(self, t, y):
@@ -705,65 +714,6 @@ class KineticsRun(object):
         else:
             fdist_array = np.zeros((y.shape[0], y.shape[1] - 1))
 
-        # someday idea: cleaner implementation of 'internal' processes
-
-        # # within d_pop_full
-        # if self.solveode['rotequil']:
-        #     rotarray = self.rotprocesses(y, t)
-        # else:
-        #     rotarray = np.zeros_like(y)
-        # if self.solveode['lambdaequil']:
-        #     lambdaarray = self.lambdaprocesses(y, t)
-        # else:
-        #     lambdaarray = np.zeros_like(y)
-        # internalarray = rotarray + lambdaarray
-        # ratearray = vibronicarray + internalarray
-        # return ratearray
-
-        # def lambdaprocesses(self, y, t):
-        #     levellambdarates = []
-        #     for level in self.system:
-        #         if level.term == 'pi':
-        #             levelrate = makeinternalrate('lambda')
-        #         elif level.term == 'sigma':
-        #             levelrate = np.zeros_like(level)
-        #         levellambdarates.append(levelrate)
-        #     return np.vstack(levellambdarates)
-
-        # def rotprocesses(self, y, t):
-        #     levelrotrates = []
-        #     for level in self.system:
-        #         if level.term == 'pi':
-        #             levelrate = makeinternalrate('rot_pi')
-        #         elif level.term == 'sigma':
-        #             levelrate = makeinternalrate('rot_sigma')
-        #     return np.vstack(levelrotrates)
-
-        # def self.makeinternalrate(ratetype, yl, equildist):
-        #     internalrate = np.zeros_like(yl)
-        #     baserate = INTERNAL_DICT[ratetype][0]
-        #     ratecoeff = INTERNAL_DICT[ratetype][1]
-        #     startrng = getrange(INTERNAL_DICT[ratetype][2])
-        #     endrng = getrange(INTERNAL_DICT[ratetype][3])
-        #     individuatedrates = (- yl[startrng] * baserate + yl[rngout]
-        #         * baserate_reverse * equildist)
-        #     internalrate[startrng] = individuatedrates
-        #     internalrate[endrng] = -individuatedrates.sum()
-        #     return internalrate
-
-# INTERNAL_DICT = {'rot_pi':[self.rates.rr,
-        #                    'quencher',
-        #                    'rot_level',
-        #                    'rot_other'],
-        #          'rot_sigma':[self.rates.rr,
-        #                       'quencher',
-        #                       'lambda_half',
-        #                       'rot_other'],
-        #          'lambda':[self.rates.lambda,
-        #                    'quencher',
-        #                    'lambda_half',
-        #                    'lambda_other']}
-
         # generate rates for each process
         # vibronic rates
         vibroniclist = self.vibronicprocesses(y, t)
@@ -805,10 +755,10 @@ class KineticsRun(object):
             coeff = intensity(t, self.uvlaser) * self.uvlsfactor
         elif ratetype == 'quencher':
             coeff = self.detcell['Q']
-        else:
-            # TODO this is dangerous! silently falls back to 1 if there's
-            # a typo in ratetype (e.g., 'irlaser' instead of 'ir_laser')
+        elif ratetype == 'first_order':
             coeff = 1
+        else:
+            raise ValueError('invalid ratetype')
         return coeff
 
     def vibronicprocesses(self, y, t):
@@ -831,7 +781,7 @@ class KineticsRun(object):
         Dictionary of relevant vibronic rates, keyed by name in VIBRONICDICT.
         '''
         vibronicratedict = {process: self.ratearray(process, y, t) for
-                            process in VIBRONICDICT if self.included(process)}
+                            process in VIBRONICDICT if self._included(process)}
         return vibronicratedict
 
     def ratearray(self, process, y, t):
@@ -854,13 +804,13 @@ class KineticsRun(object):
         Calculated array of rates, with same shape as y.
         '''
         rarray = np.zeros_like(y)
-        startlevel_idx = self.startlevel_lookup(process)
-        startrng_idx = self.getrngidx(getstartrng(process))()
-        endlevel_idx = self.endlevel_lookup(process)
-        endrng_idx = self.getrngidx(getendrng(process))()
+        startlevel_idx = self._startlevel_lookup(process)
+        startrng_idx = self._getrngidx(_getstartrng(process))()
+        endlevel_idx = self._endlevel_lookup(process)
+        endrng_idx = self._getrngidx(_getendrng(process))()
 
-        base = self.baserate_k(process)
-        coeff = self.ratecoeff(coefftype(process), t)
+        base = self._baserate_k(process)
+        coeff = self.ratecoeff(_coefftype(process), t)
         conc = y[startlevel_idx, startrng_idx]
         rate = base*coeff*conc
         # for vibronic process, startrng = endrng
@@ -868,26 +818,26 @@ class KineticsRun(object):
         rarray[endlevel_idx, endrng_idx] = rate
         return rarray
 
-    def included(self, proc):
+    def _included(self, proc):
         '''Determine whether a VIBRONICDICT process should be included.
         '''
-        if coefftype(proc) == 'ir_laser' and self.odepar['withoutIR'] == True:
+        if _coefftype(proc) == 'ir_laser' and self.odepar['withoutIR'] == True:
             return False
-        elif (coefftype(proc) == 'uv_laser' and
+        elif (_coefftype(proc) == 'uv_laser' and
               self.odepar['withoutUV'] == True):
             return False
         else:
-            to_include = (startlevel(proc) in self.levels and
-                          endlevel(proc) in self.levels)
+            to_include = (_startlevel(proc) in self.levels and
+                          _endlevel(proc) in self.levels)
             return to_include
 
-    def getrngidx(self, rnglabel):
+    def _getrngidx(self, rnglabel):
         '''Look up slice for named range within level
 
         Returns an unbound function because las_bin location is function of
         time.
         '''
-        rng = {'las_bin': self.laspos,
+        rng = {'las_bin': self._laspos,
                'half_lambda': lambda: np.s_[:-2],
                'rot_level': lambda: np.s_[:-1],
                'rot_other': lambda: np.s_[-1],
@@ -953,7 +903,7 @@ class KineticsRun(object):
                 raise NameError("improper plotcode ", plotcode)
 
         ax0.set_title(title)
-        ax0.set_xlabel('Time ($\mu$s)')
+        ax0.set_xlabel(r'Time ($\mu$s)')
         ax0.set_ylabel('pi state pops (a or b)')
         ax0.set_xlim((0, self.odepar['inttime']*1e6))
 
@@ -1061,7 +1011,7 @@ class KineticsRun(object):
         else:
             ax1.plot(x_usec, self.tbins*0)
         ax1.set_title('Position of IR beam')
-        ax1.set_xlabel('Time ($\mu$s)')
+        ax1.set_xlabel(r'Time ($\mu$s)')
         ax1.set_ylabel('Relative Frequency (MHz)')
 
         return fig
@@ -1151,23 +1101,23 @@ class KineticsRun(object):
             self.sweep.las_bins = data['las_bins']
             self.tbins = data['tbins']
             self.sweepfunc = data['sweepfunc']
-            self.irfeat = ap.AbsProfile(wnum=self.hline['wnum_ab'])
+            self.irfeat = ap.AbsProfile(wnum=self.irline['wnum_ab'])
             self.irfeat.abs_freq = data['abs_freq']
             self.irfeat.pop = data['pop']
 
     # interpret ratetype parameters in terms of particular KineticsRun instance
-    def baserate_k(self, ratetype):
+    def _baserate_k(self, ratetype):
         '''Look up rate constant for ratetype within KineticsRun.rates
         '''
-        return _getnested(baserate(ratetype), self.rates)
-    def startlevel_lookup(self, ratetype):
+        return _getnested(_baserate(ratetype), self.rates)
+    def _startlevel_lookup(self, ratetype):
         '''Look up initial vibronic level index for ratetype.
         '''
-        return self.levels[startlevel(ratetype)]
-    def endlevel_lookup(self, ratetype):
+        return self.levels[_startlevel(ratetype)]
+    def _endlevel_lookup(self, ratetype):
         '''Look up final vibronic level index for ratetype.
         '''
-        return self.levels[endlevel(ratetype)]
+        return self.levels[_endlevel(ratetype)]
 
 def _getnested(keys, nesteddict):
     '''Access data in nested dict using a list of keys.'''
@@ -1185,12 +1135,12 @@ SLICEDICT = {'rot_level': np.s_[:-1],
              'half_lambda': np.s_[:-2],
              'full': np.s_[:]}
 # Form of VIBRONICDICT:
-# rate constant, 'concentration' it needs to be multiplied by (or `None` if
+# rate constant, 'coefftype' it needs to be multiplied by (or `'first_order' if
 # first-order), initial level, final level, initial range (within level), final
-# range.
-# Name each entry with description of type of process, followed by suffix that
-# describes the transition: 'ir' or 'uv' if laser transition, 'p0', 'p1', 's0',
-# 's1' for v=0 or 1 level of pi (X) or sigma (A) state, respectively.
+# range.  Name each entry with description of type of process, followed by
+# suffix that describes the transition: 'ir' or 'uv' if laser transition, 'p0',
+# 'p1', 's0', 's1' for v=0 or 1 level of pi (X) or sigma (A) state,
+# respectively.
 VIBRONICDICT = {'absorb_ir':['Bab',
                              'ir_laser',
                              'pi_v0',
@@ -1240,25 +1190,25 @@ VIBRONICDICT = {'absorb_ir':['Bab',
                                     'full',
                                     'full'],
                 'spont_emit_s0p0':[['A', '00'],
-                                   None,
+                                   'first_order',
                                    'sigma_v0',
                                    'pi_v0',
                                    'full',
                                    'full'],
                 'spont_emit_s0p1':[['A', '01'],
-                                   None,
+                                   'first_order',
                                    'sigma_v0',
                                    'pi_v1',
                                    'full',
                                    'full'],
                 'spont_emit_s1p0':[['A', '10'],
-                                   None,
+                                   'first_order',
                                    'sigma_v1',
                                    'pi_v0',
                                    'full',
                                    'full'],
                 'spont_emit_s1p1':[['A', '11'],
-                                   None,
+                                   'first_order',
                                    'sigma_v1',
                                    'pi_v1',
                                    'full',
@@ -1270,27 +1220,27 @@ VIBRONICDICT = {'absorb_ir':['Bab',
                                    'full',
                                    'full']}
 # accessors for VIBRONICDICT
-def baserate(ratetype):
+def _baserate(ratetype):
     '''Access string of rate constant for ratetype in VIBRONICDICT.
     '''
     return VIBRONICDICT[ratetype][0]
-def coefftype(ratetype):
+def _coefftype(ratetype):
     '''Access string of coefficient for ratetype in VIBRONICDICT.
     '''
     return VIBRONICDICT[ratetype][1]
-def startlevel(ratetype):
+def _startlevel(ratetype):
     '''Access string of starting vibronic level for ratetype in VIBRONICDICT.
     '''
     return VIBRONICDICT[ratetype][2]
-def endlevel(ratetype):
+def _endlevel(ratetype):
     '''Access string of ending vibronic level for ratetype in VIBRONICDICT.
     '''
     return VIBRONICDICT[ratetype][3]
-def getstartrng(ratetype):
+def _getstartrng(ratetype):
     '''Access range within startlevel for ratetype in VIBRONICDICT.
     '''
     return VIBRONICDICT[ratetype][4]
-def getendrng(ratetype):
+def _getendrng(ratetype):
     '''Access range within endlevel for ratetype in VIBRONICDICT.
     '''
     return VIBRONICDICT[ratetype][5]
@@ -1370,7 +1320,7 @@ def internalrate(ylevel, ratecon, equildist, ratetype):
 
 def calclsfactor(line, laser):
     '''Calculate factor in laser excitation rate due to lineshapes.
-    
+
     Assumes the peaks of the two lineshapes are perfectly aligned.
 
     Treat factor as separate from the inherent "intensity" of the laser

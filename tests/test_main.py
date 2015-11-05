@@ -124,7 +124,7 @@ def test_KineticsRun_init_toggle_laser_setup(hpar, par, par_laser_setup):
     par_lasers = deepcopy(par)
     _nestedupdate(par_lasers, par_laser_setup)
     k_lasers = pm.KineticsRun(hpar, **par_lasers)
-    assert hasattr(k_lasers, 'system')
+    assert hasattr(k_lasers, 'levels')
 
 @pytest.mark.parametrize("par_laser_bad", [
     {'uvline': {'vib': '20'}, 'odepar': {'withoutUV': False,
