@@ -68,4 +68,4 @@ k.popsfigure()
 `pip install git+https://github.com/awbirdsall/popmodel` installs most recent commit on github (bleeding-edge is `develop` branch)
 
 ## Dependencies
-Written for Python 2.7. Requires `numpy`, `scipy`, `pandas`, `pyyaml` and `matplotlib` (automatically handled using `pip` to install). Tests written using `pytest` using the [`pytest-mpl` plugin](https://github.com/astrofrog/pytest-mpl). Developed in a Windows environment.
+Written for Python 2.7. Requires `numpy`, `scipy`, `pandas`, `pyyaml` and `matplotlib>=1.5` (automatically handled if using `pip` to install). Tests written using `pytest` using the [`pytest-mpl` plugin](https://github.com/astrofrog/pytest-mpl). Developed in a Windows environment.
