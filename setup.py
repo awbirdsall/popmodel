@@ -36,7 +36,7 @@ setup(
         'atmosphere'],
     package_dir = {'': 'src'},
     packages=['popmodel'],
-    install_requires=['matplotlib','pandas','numpy','scipy','pyyaml'],
+    install_requires=['matplotlib>=1.5','pandas','numpy','scipy','pyyaml'],
     package_data={
         'popmodel': ['data/parameters_sample.yaml',
             'data/hitran_sample.par'],

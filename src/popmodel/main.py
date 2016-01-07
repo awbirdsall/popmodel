@@ -104,10 +104,10 @@ def automate(hitfile, parameters, logfile=None, csvout=None, image=None,
 class KineticsRun(object):
     '''Full model of OH population kinetics: laser, feature and populations.
 
-    If IR laser is swept, has single instance of Sweep, describing laser
-    dithering, and of AbsProfile, describing absorption feature. Sweep is made
-    in __init__, while AbsProfile is made after the HITRAN file is imported and
-    the absorption feature selected.
+    If IR laser is swept, has single instance of Sweep, describing IR laser
+    dithering. Also has two AbsProfile instances, irfeat and uvfeat, describing
+    absorption features. All are made on initialization of KineticsRun
+    instance.
     '''
     def __init__(self, hpar, irlaser, sweep, uvlaser, odepar, irline, uvline,
                  detcell, rates):
@@ -374,9 +374,9 @@ class KineticsRun(object):
         else:
             f_b = int(self.irline['label'][3]) - 1
         rotfrac = np.array([oh.ROTFRAC['a'][f_a][self.irline['Na']-1],
-                                 oh.ROTFRAC['b'][f_b][self.irline['Nb']-1],
-                                 oh.ROTFRAC['c'][self.uvline['Nc']],
-                                 oh.ROTFRAC['d'][self.uvline['Nd']]])
+                            oh.ROTFRAC['b'][f_b][self.irline['Nb']-1],
+                            oh.ROTFRAC['c'][self.uvline['Nc']],
+                            oh.ROTFRAC['d'][self.uvline['Nd']]])
         return rotfrac
 
     def _makeirfeat(self):
@@ -463,7 +463,7 @@ class KineticsRun(object):
 
         fluorcounts = 0.
         for rate in fluorrates:
-            fluorlevel = int(rate[0]) + 2 # from A(v'=0) is index 2, from A(v'=1) is index 3
+            fluorlevel = int(rate[0]) + 2 # from A(v'=0)-->index 2, A(v'=1)-->3
             intpop = (self.pop_full[timerange_s, fluorlevel, :].sum()*
                       self.odepar['dt'])
             fluorcounts = fluorcounts + intpop*self.rates['A'][rate]
@@ -894,11 +894,11 @@ class KineticsRun(object):
                 ax0.plot(self.tbins*1e6, self.popseries(plotcode),
                          label=plotcode)
                 if maketwinx:
-                    ax1._get_lines.color_cycle.next()
+                    next(ax1._get_lines.prop_cycler)
             elif plotcode[0] == 'c' or plotcode[0] == 'd':
                 ax1.plot(self.tbins*1e6, self.popseries(plotcode),
                          label=plotcode)
-                ax0._get_lines.color_cycle.next()
+                next(ax0._get_lines.prop_cycler)
             else:
                 raise NameError("improper plotcode ", plotcode)
 
