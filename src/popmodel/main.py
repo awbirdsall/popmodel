@@ -374,9 +374,9 @@ class KineticsRun(object):
         else:
             f_b = int(self.irline['label'][3]) - 1
         rotfrac = np.array([oh.ROTFRAC['a'][f_a][self.irline['Na']-1],
-                                 oh.ROTFRAC['b'][f_b][self.irline['Nb']-1],
-                                 oh.ROTFRAC['c'][self.uvline['Nc']],
-                                 oh.ROTFRAC['d'][self.uvline['Nd']]])
+                            oh.ROTFRAC['b'][f_b][self.irline['Nb']-1],
+                            oh.ROTFRAC['c'][self.uvline['Nc']],
+                            oh.ROTFRAC['d'][self.uvline['Nd']]])
         return rotfrac
 
     def _makeirfeat(self):
@@ -463,7 +463,7 @@ class KineticsRun(object):
 
         fluorcounts = 0.
         for rate in fluorrates:
-            fluorlevel = int(rate[0]) + 2 # from A(v'=0) is index 2, from A(v'=1) is index 3
+            fluorlevel = int(rate[0]) + 2 # from A(v'=0)-->index 2, A(v'=1)-->3
             intpop = (self.pop_full[timerange_s, fluorlevel, :].sum()*
                       self.odepar['dt'])
             fluorcounts = fluorcounts + intpop*self.rates['A'][rate]
