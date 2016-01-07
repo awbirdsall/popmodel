@@ -894,11 +894,11 @@ class KineticsRun(object):
                 ax0.plot(self.tbins*1e6, self.popseries(plotcode),
                          label=plotcode)
                 if maketwinx:
-                    ax1._get_lines.color_cycle.next()
+                    next(ax1._get_lines.prop_cycler)
             elif plotcode[0] == 'c' or plotcode[0] == 'd':
                 ax1.plot(self.tbins*1e6, self.popseries(plotcode),
                          label=plotcode)
-                ax0._get_lines.color_cycle.next()
+                next(ax0._get_lines.prop_cycler)
             else:
                 raise NameError("improper plotcode ", plotcode)
 
