@@ -10,3 +10,4 @@ popmodel.egg-info/
 *.csv
 raw_hitran/
 .cache/
+.tox/
