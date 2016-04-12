@@ -1,8 +1,6 @@
 # popmodel
 
-[![Latest Version](https://img.shields.io/pypi/v/popmodel.svg)](https://pypi.python.org/pypi/popmodel/)
-
-[![Build Status](https://travis-ci.org/awbirdsall/popmodel.svg?branch=master)](https://travis-ci.org/awbirdsall/popmodel)
+[![Latest Version](https://img.shields.io/pypi/v/popmodel.svg)](https://pypi.python.org/pypi/popmodel/) [![Build Status](https://travis-ci.org/awbirdsall/popmodel.svg?branch=master)](https://travis-ci.org/awbirdsall/popmodel)
 
 Python package to calculate the population of molecules in particular quantum states using a master equation approach. Designed for (and currently only usable) for excitation of the hydroxyl radical (OH) to one excited vibrational state and one excited electronic state, with two different lasers, and up to four vibronic states being tracked.
 
