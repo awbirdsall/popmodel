@@ -1,5 +1,6 @@
 '''popmodel module for Sweep class
 '''
+from __future__ import division
 import numpy as np
 import logging
 
@@ -91,9 +92,9 @@ class Sweep(object):
                 self.logger.info('alignbins: IR sweep width maximized: '
                                  '%.2g MHz', self.width/1e6)
                 abmid = np.size(abfeat.abs_freq) // 2
-                irfw = self.width/self.binwidth
-                self.las_bins = abfeat.abs_freq[abmid-irfw/2:abmid+irfw/2]
-                abfeat.intpop = abfeat.pop[abmid-irfw/2:abmid+irfw/2]
+                irfw = self.width//self.binwidth
+                self.las_bins = abfeat.abs_freq[abmid-irfw//2:abmid+irfw//2]
+                abfeat.intpop = abfeat.pop[abmid-irfw//2:abmid+irfw//2]
             else: # reduce self.width to abswidth
                 fullwidth = self.width
                 if self.keeptsweep == False: # scale tsweep by width reduction

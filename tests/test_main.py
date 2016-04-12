@@ -1,3 +1,4 @@
+from __future__ import division
 import pytest
 import popmodel as pm
 from pkg_resources import resource_filename
@@ -149,7 +150,7 @@ def test_KineticsRun_init_toggle_laser_setup_ValueErrors(hpar, par,
 # Update nested dictionary like `par` for tests with parametrized values,
 # see https://stackoverflow.com/a/3233356
 def _nestedupdate(d, u):
-    for k,v in u.iteritems():
+    for k,v in u.items():
         if isinstance(v, Mapping):
             r = _nestedupdate(d.get(k, {}), v)
             d[k] = r

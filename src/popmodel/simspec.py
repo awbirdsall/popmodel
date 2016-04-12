@@ -2,6 +2,7 @@
 
 Spectrum can be made up of one or more lines.
 '''
+from __future__ import division
 # modules within package
 from . import ohcalcs as oh
 

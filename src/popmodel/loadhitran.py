@@ -4,6 +4,7 @@ Created on Tue May 27 16:10:34 2014
 
 @author: abirdsall
 """
+from __future__ import division
 from . import atmcalcs as atm
 from . import ohcalcs as oh
 
@@ -48,13 +49,13 @@ def importhitran(hfile, columns=None):
                                  ('E_low', '<f8'),
                                  ('n_air', '<f8'),
                                  ('delta_air', '<f8'),
-                                 ('ugq', 'S15'),
-                                 ('lgq', 'S15'),
-                                 ('ulq', 'S15'),
-                                 ('llq', 'S15'),
-                                 ('ierr', 'S6'),
-                                 ('iref', 'S12'),
-                                 ('flag', 'S1'),
+                                 ('ugq', 'U15'),
+                                 ('lgq', 'U15'),
+                                 ('ulq', 'U15'),
+                                 ('llq', 'U15'),
+                                 ('ierr', 'U6'),
+                                 ('iref', 'U12'),
+                                 ('flag', 'U1'),
                                  ('g_up', 'f8'),
                                  ('g_low', 'f8')],
                           usecols=columns)
@@ -193,7 +194,7 @@ def extractnjlabel(hdata):
                   '21': (spinsa != spinsb) & (spinsa == 0.5),
                   '12': (spinsa != spinsb) & (spinsa == -0.5)}
     indexarray = np.empty_like(spinsa, dtype='str')
-    for label, entry in index_dict.iteritems():
+    for label, entry in index_dict.items():
         indexarray[np.where(entry)] = label
     # bring it all together into a single 'label' string per line
     label = np.vectorize(lambda x, y, z, w: x+'_'+y+'('+z+')'+w) \
