@@ -32,6 +32,7 @@ from scipy.stats import norm
 from math import floor, log
 import logging
 import yaml
+from functools import reduce # for python 3 compatibility
 # Prefer CLoader to load yaml, see https://stackoverflow.com/q/18404441
 # But, probably makes absolutely no difference for small yaml file used here.
 try:
