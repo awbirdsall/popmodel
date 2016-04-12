@@ -1,5 +1,6 @@
 '''popmodel module for AbsProfile class
 '''
+from __future__ import division
 from . import ohcalcs as oh
 
 import logging

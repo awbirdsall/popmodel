@@ -1,5 +1,6 @@
 '''popmodel module for command line creation and integration of KineticsRun
 '''
+from __future__ import division
 from . import main
 import argparse
 
@@ -16,7 +17,7 @@ def command():
     # optional parameters
     argdict = {"logfile": "log file", "csvout": "output csv",
                "image": "output png image"}
-    for arg, descr in argdict.iteritems():
+    for arg, descr in argdict.items():
         shortflag = "-" + arg[0]
         longflag = "--" + arg
         parser.add_argument(shortflag, longflag, help=descr)

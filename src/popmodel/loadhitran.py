@@ -4,6 +4,7 @@ Created on Tue May 27 16:10:34 2014
 
 @author: abirdsall
 """
+from __future__ import division
 from . import atmcalcs as atm
 from . import ohcalcs as oh
 
@@ -193,7 +194,7 @@ def extractnjlabel(hdata):
                   '21': (spinsa != spinsb) & (spinsa == 0.5),
                   '12': (spinsa != spinsb) & (spinsa == -0.5)}
     indexarray = np.empty_like(spinsa, dtype='str')
-    for label, entry in index_dict.iteritems():
+    for label, entry in index_dict.items():
         indexarray[np.where(entry)] = label
     # bring it all together into a single 'label' string per line
     label = np.vectorize(lambda x, y, z, w: x+'_'+y+'('+z+')'+w) \

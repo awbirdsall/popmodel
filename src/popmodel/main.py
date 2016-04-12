@@ -18,7 +18,7 @@ Capabilities:
   population output)
 
 """
-
+from __future__ import division
 from . import ohcalcs as oh
 from . import atmcalcs as atm
 from . import loadhitran as loadhitran
@@ -87,7 +87,7 @@ def automate(hitfile, parameters, logfile=None, csvout=None, image=None,
     # log each output filename
     argdict = {"log file": logfile, "output csv": csvout,
                "output png image":image}
-    for (outputtype, outputfile) in argdict.iteritems():
+    for (outputtype, outputfile) in argdict.items():
         if outputfile is not None:
             LOGGER.info('saving '+outputtype+' to '+outputfile)
 
@@ -718,7 +718,7 @@ class KineticsRun(object):
         # generate rates for each process
         # vibronic rates
         vibroniclist = self.vibronicprocesses(y, t)
-        vibronicarray = np.sum(vibroniclist.values(), axis=0)
+        vibronicarray = np.sum(list(vibroniclist.values()), axis=0)
 
         # rotational equilibration
         rrin = self.rates['rrout'] * self.rotfrac / (1 - self.rotfrac)

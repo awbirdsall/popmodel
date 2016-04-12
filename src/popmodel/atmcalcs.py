@@ -1,6 +1,6 @@
 '''popmodel module for 'atmospheric chemistry'-type calculations
 '''
-
+from __future__ import division
 from scipy.constants import c, N_A, gas_constant, atm, torr
 
 ## Constants derived from scipy.constants:
