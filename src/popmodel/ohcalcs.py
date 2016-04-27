@@ -549,27 +549,3 @@ def voigt(xarr, amp, xcen, sigma, gamma, normalized=False):
         return V / (sigma*np.sqrt(2*np.pi))
     else:
         return V
-
-def sigmatot_from_einstein(nu, A, j_low, j_up):
-    '''Calculate integrated absorption cross-section from Einstein coefficient.
-    
-    Follow eqn. 3 in Dorn et al. (JGR 1995).
-
-    Parameters
-    ----------
-    nu : float
-    Wavenumber of transition, cm^-1
-    A : float
-    Einstein A-coefficient, s^-1
-    j_low : float
-    lower state rotational level
-    j_up : float
-    upper state rotational level
-
-    Outputs
-    -------
-    sigma_tot : float
-    Integrated absorption cross-section, cm^2 cm^-1
-    '''
-    sigma_tot = 1/(8*pi*(c*100)*nu**2) * (2*j_up+1)/(2*j_low+1) * A
-    return sigma_tot
