@@ -36,6 +36,9 @@ def k_solved(hpar, par):
 
 # KineticsRun instance set up for UV (vibrationless transition) without IR
 @pytest.fixture(scope='module')
+
+# KineticsRun instance set up for UV (vibrationless transition) without IR
+@pytest.fixture(scope='module')
 def k_uvonly(hpar, par):
     par_uvonly = deepcopy(par)
     uvonly_reqs = {'uvline': {'vib': '00'}, 'odepar': {'withoutUV': False,
