@@ -31,7 +31,7 @@ def kqavg(kn2, ko2, kh2o, xh2o=0.02):
 #######################
 
 ### Literature values for OH
-MASS = 17.01/(N_A)*1000    # kg
+MASS = 17.01/(N_A)/1000    # kg
 
 NU12 = 3407.53 * atm.WAVENUM_TO_HZ  # Hz, IR transition used in Tsuji et al,
 # 2000. Illustrative example; popmodel extracts precise wavenumber for given IR
