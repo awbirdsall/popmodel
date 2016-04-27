@@ -5,42 +5,37 @@ from pkg_resources import resource_filename
 from collections import Mapping
 from copy import deepcopy
 
-@pytest.fixture(scope='session')
-def hpar():
-    hpath = resource_filename('popmodel', 'data/hitran_sample.par')
-    return pm.loadhitran.processhitran(hpath)
-
 # Use parameters_template YAML file included with package as base set of
 # parameters. Toggle settings in deepcopies of par (deepcopy needed for nested
 # dict) in tests as needed.
-@pytest.fixture(scope='session')
+@pytest.fixture(scope='module')
 def par():
     yamlpath = resource_filename('popmodel','data/parameters_template.yaml')
     return pm.importyaml(yamlpath)
 
 # KineticsRun instance without running solveode
-@pytest.fixture(scope='session')
+@pytest.fixture(scope='module')
 def k(hpar,par):
     return pm.KineticsRun(hpar,**par)
 
 # KineticsRun instance that has had solveode() run.
-@pytest.fixture(scope='session')
+@pytest.fixture(scope='module')
 def k_solved(hpar, par):
     k_solved = pm.KineticsRun(hpar, **par)
     k_solved.solveode()
     return k_solved
 
-# KineticsRun instance with dosweep = True
-@pytest.fixture(scope='session')
-def k_sweep(hpar, par):
-    par_sweep = deepcopy(par)
-    par_sweep['sweep']['dosweep'] = True
-    k_sweep = pm.KineticsRun(hpar, **par_sweep)
-    k_sweep.solveode()
-    return k_sweep
+# # KineticsRun instance with dosweep = True
+# @pytest.fixture(scope='module')
+# def k_sweep(hpar, par):
+#     par_sweep = deepcopy(par)
+#     par_sweep['sweep']['dosweep'] = True
+#     k_sweep = pm.KineticsRun(hpar, **par_sweep)
+#     k_sweep.solveode()
+#     return k_sweep
 
 # KineticsRun instance set up for UV (vibrationless transition) without IR
-@pytest.fixture(scope='session')
+@pytest.fixture(scope='module')
 def k_uvonly(hpar, par):
     par_uvonly = deepcopy(par)
     uvonly_reqs = {'uvline': {'vib': '00'}, 'odepar': {'withoutUV': False,
@@ -95,13 +90,13 @@ def test_popsfigure_default_subpop(k_solved):
 def test_popsfigure_integrate_uvlaser_only(k_uvonly):
     return k_uvonly.popsfigure(subpop=['b', 'c'])
 
-@pytest.mark.mpl_image_compare
-def test_vslaserfigure_defaults(k_sweep):
-    return k_sweep.vslaserfigure(k_sweep.popseries('b'))
+# @pytest.mark.mpl_image_compare
+# def test_vslaserfigure_defaults(k_sweep):
+#     return k_sweep.vslaserfigure(k_sweep.popseries('b'))
 
-@pytest.mark.mpl_image_compare
-def test_absfigure_defaults(k_sweep):
-    return k_sweep.absfigure()
+# @pytest.mark.mpl_image_compare
+# def test_absfigure_defaults(k_sweep):
+#     return k_sweep.absfigure()
 
 def test_calcfluor_returns_value(k_solved):
     assert k_solved.calcfluor()
