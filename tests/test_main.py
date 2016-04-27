@@ -5,33 +5,28 @@ from pkg_resources import resource_filename
 from collections import Mapping
 from copy import deepcopy
 
-@pytest.fixture(scope='session')
-def hpar():
-    hpath = resource_filename('popmodel', 'data/hitran_sample.par')
-    return pm.loadhitran.processhitran(hpath)
-
 # Use parameters_template YAML file included with package as base set of
 # parameters. Toggle settings in deepcopies of par (deepcopy needed for nested
 # dict) in tests as needed.
-@pytest.fixture(scope='session')
+@pytest.fixture(scope='module')
 def par():
     yamlpath = resource_filename('popmodel','data/parameters_template.yaml')
     return pm.importyaml(yamlpath)
 
 # KineticsRun instance without running solveode
-@pytest.fixture(scope='session')
+@pytest.fixture(scope='module')
 def k(hpar,par):
     return pm.KineticsRun(hpar,**par)
 
 # KineticsRun instance that has had solveode() run.
-@pytest.fixture(scope='session')
+@pytest.fixture(scope='module')
 def k_solved(hpar, par):
     k_solved = pm.KineticsRun(hpar, **par)
     k_solved.solveode()
     return k_solved
 
 # KineticsRun instance with dosweep = True
-@pytest.fixture(scope='session')
+@pytest.fixture(scope='module')
 def k_sweep(hpar, par):
     par_sweep = deepcopy(par)
     par_sweep['sweep']['dosweep'] = True
@@ -40,7 +35,7 @@ def k_sweep(hpar, par):
     return k_sweep
 
 # KineticsRun instance set up for UV (vibrationless transition) without IR
-@pytest.fixture(scope='session')
+@pytest.fixture(scope='module')
 def k_uvonly(hpar, par):
     par_uvonly = deepcopy(par)
     uvonly_reqs = {'uvline': {'vib': '00'}, 'odepar': {'withoutUV': False,
