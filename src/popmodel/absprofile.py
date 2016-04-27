@@ -58,7 +58,7 @@ class AbsProfile(object):
 
         g_air : float
         Air-broadening coefficient provided in HITRAN files, cm^-1 atm^-1.
-        Defaults to ohcalcs value.
+        Defaults to ohcalcs value (only appropriate for IR line).
 
         mass : float
         Mass of molecule of interest, kg. Defaults to ohcalcs value
