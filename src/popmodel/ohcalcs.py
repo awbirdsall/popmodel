@@ -551,7 +551,7 @@ def voigt(xarr, amp, xcen, sigma, gamma, normalized=False):
         return V
 
 def sigmatot_from_einstein(nu, A, j_low, j_up):
-    '''calculate absorption cross-section given Einstein coefficient.
+    '''Calculate integrated absorption cross-section from Einstein coefficient.
     
     Follow eqn. 3 in Dorn et al. (JGR 1995).
 
