@@ -81,9 +81,24 @@ Tested for Python 2.7 and 3.5.
 
 Requires `numpy`, `scipy`, `pandas`, `pyyaml` and `matplotlib>=1.5` (automatically handled if using `pip` to install).
 
-Tests written using `pytest` using the [`pytest-mpl` plugin](https://github.com/astrofrog/pytest-mpl).
+Developed in a Windows environment. Travis-CI tests performed on Linux virtual machine.
 
-Developed in a Windows environment.
+## Testing
+
+Tests written using `pytest` with the [`pytest-mpl` plugin](https://github.com/astrofrog/pytest-mpl) to check matplotlib image output and the [`pytest-cov` plugin](https://github.com/pytest-dev/pytest-cov) to assess coverage. To create baseline images that will be compared against:
+
+```bash
+$ py.test --mpl-generate-path=baseline
+```
+
+Then to run full test suite with matplotlib and coverage plugins:
+
+```bash
+$ py.test --mpl --cov=popmodel
+```
+
+Travis-CI tests do not run the `--mpl` image comparison.
+
 
 ## latest
 
