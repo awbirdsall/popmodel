@@ -85,6 +85,12 @@ Tests written using `pytest` using the [`pytest-mpl` plugin](https://github.com/
 
 Developed in a Windows environment.
 
+## latest
+
+- fix error in oh.MASS (was 10<sup>6</sup> too large)
+- fix absolute scaling of cross-sections in `simspec` (missing factor of 3E10)
+- refactor `simspec` to make cross-section functions accessible without using hitran line
+
 ## 0.4.0 (2016-04-12)
 
 - add support for Python 3 (Python 3.5 tested)
