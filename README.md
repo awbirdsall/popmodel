@@ -15,6 +15,7 @@ This represents a slow accumulation of calculations I've needed to do for a rese
 - Create `matplotlib` figures of populations or laser frequency over time; create figure of infrared absorption feature (`main.KineticsRun.[...]figure()` functions).
 - convenience unit conversion functions related to atmospheric science (`atmcalcs`)
 - constants and functions related to OH spectroscopy (`ohcalcs`)
+- Simulate absorption cross-section spectrum (`popmodel.simspec` module -- needs to be imported separately from `popmodel` package).
 
 The core of `popmodel` is the `KineticsRun` object. Each `KineticsRun` instance requires dictionaries of parameters describing rates of spectroscopic transitions, lasers, detection cell, transition lines, and ODE integration.  The expected dictionary format is designed for extraction from a YAML file and compatible with command line use.
 
@@ -26,7 +27,7 @@ Infrared line parameters are extracted from the 140-character-format HITRAN 2012
 
 An 200-line excerpt from the OH HITRAN file is included at `src/popmodel/data/hitran_sample.par` for use by the test module. To extract the path to `hitran_sample.par`:
 
-~~~
+~~~python
 from pkg_resources import resource_filename
 hpath = resource_filename('popmodel','data/hitran_sample.par')
 ~~~
@@ -37,7 +38,7 @@ Parameters for setting up a `KineticsRun` instance are organized in dictionaries
 
 To extract the path to `parameters_template.yaml` within `popmodel`:
 
-~~~
+~~~python
 from pkg_resources import resource_filename
 yamlpath = resource_filename('popmodel','data/parameters_template.yaml')
 ~~~
@@ -50,15 +51,15 @@ Installation using `pip` creates command-line command `popmodel`. Format of comm
 
 For example:
 
-~~~
-popmodel 13_hit12.par parameters.yaml -l output.log -c output.csv -i output.png
+~~~bash
+$ popmodel 13_hit12.par parameters.yaml -l output.log -c output.csv -i output.png
 ~~~
 
 ### Python session
 
 Basic usage:
 
-~~~
+~~~python
 import popmodel as pm
 pm.add_streamhandler() # optional, print logging.INFO to screen
 pm.add_filehandler("path/to.log") # optional, write logging.INFO to file
@@ -71,15 +72,23 @@ k.popsfigure()
 
 ## Installation
 
-`pip install popmodel` install from PyPI
+Install from PyPI:
 
-`pip install git+https://github.com/awbirdsall/popmodel` installs most recent commit on github
+~~~bash
+$ pip install popmodel
+~~~
+
+Install most recent commit on Github (less stable):
+
+~~~bash
+$ pip install git+https://github.com/awbirdsall/popmodel
+~~~
 
 ## Dependencies
 
 Tested for Python 2.7 and 3.5.
 
-Requires `numpy`, `scipy`, `pandas`, `pyyaml` and `matplotlib>=1.5` (automatically handled if using `pip` to install).
+Requires `numpy`, `scipy`, `pandas`, `pyyaml` and `matplotlib>=1.5` (automatically handled if using `pip` to install). I recommend using [`conda`](http://conda.pydata.org/docs/index.html) to install the Scipy stack on a Windows machine if `pip` is having issues.
 
 Developed in a Windows environment. Travis-CI tests performed on Linux virtual machine.
 
