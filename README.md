@@ -94,10 +94,10 @@ Developed in a Windows environment. Travis-CI tests performed on Linux virtual m
 
 ## Testing
 
-Tests written using `pytest` with the [`pytest-mpl` plugin](https://github.com/astrofrog/pytest-mpl) to check matplotlib image output and the [`pytest-cov` plugin](https://github.com/pytest-dev/pytest-cov) to assess coverage. To create baseline images that will be compared against:
+Tests written using `pytest` with the [`pytest-mpl` plugin](https://github.com/astrofrog/pytest-mpl) to check matplotlib image output and the [`pytest-cov` plugin](https://github.com/pytest-dev/pytest-cov) to assess coverage. To create baseline images that will be compared against (from root project folder):
 
 ```bash
-$ py.test --mpl-generate-path=baseline
+$ py.test --mpl-generate-path=tests/baseline
 ```
 
 Then to run full test suite with matplotlib and coverage plugins:
