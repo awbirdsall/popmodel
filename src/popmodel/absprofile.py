@@ -46,33 +46,32 @@ class AbsProfile(object):
         Parameters:
         -----------
         abswidth : float
-        Minimum width of profile, Hz. Starting value that then expands if this
-        does not capture 'enough' of the profile (defined as <1% of peak height
-        at edges).
+            Minimum width of profile, Hz. Starting value that then expands if
+            this does not capture 'enough' of the profile (defined as <1% of
+            peak height at edges).
 
         press : float
-        Operating pressure, torr. Defaults to ohcalcs value
+            Operating pressure, torr. Defaults to ohcalcs value.
 
         T : float
-        Temperature. Defaults to ohcalcs value
+            Temperature. Defaults to ohcalcs value
 
         g_air : float
-        Air-broadening coefficient provided in HITRAN files, cm^-1 atm^-1.
-        Defaults to ohcalcs value (only appropriate for IR line).
+            Air-broadening coefficient provided in HITRAN files, cm^-1 atm^-1.
+            Defaults to ohcalcs value (only appropriate for IR line).
 
         mass : float
-        Mass of molecule of interest, kg. Defaults to ohcalcs value
+            Mass of molecule of interest, kg. Defaults to ohcalcs value
 
         edgecutoff : float
-        Cut-off for acceptable relative intensity at edge of profile compared
-        to peak. If relative intensity is larger than this value, Voigt profile
-        will be recalculated over a 50% broader frequency range.
-        '''
-        sigma = (kb*T / (mass*c**2))**(0.5)*self.freq # Gaussian std dev
+            Cut-off for acceptable relative intensity at edge of profile
+            compared to peak. If relative intensity is larger than this value,
+            Voigt profile will be recalculated over a 50% broader frequency
+            range.
 
-        gamma = (g_air*c*100) * press/760. # Lorentzian parameter
-        # air-broadened HWHM at 296K, HITRAN (converted from cm^-1 atm^-1)
-        # More correctly, correct for temperature -- see Dorn et al. Eq 17
+        '''
+        sigma = oh.doppler_sigma(self.freq, T, mass)
+        gamma = oh.pressure_gamma(g_air, press)
 
         # Make abs_freq profile, checking pop at edge <1% of peak
         enoughwidth = False

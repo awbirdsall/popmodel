@@ -17,7 +17,7 @@ import logging
 
 LOGGER = logging.getLogger('popmodel.simspec')
 
-def simline(hitline, xarr=None, press=oh.OP_PRESS, T=oh.TEMP):
+def simline(hitline, xarr=None, press=oh.OP_PRESS, T=oh.TEMP, mass=oh.MASS):
     '''Calculate simulated absorption spectrum for a single HITRAN line.
 
     Accounts for relative population of lower state, assuming the state is
@@ -39,6 +39,8 @@ def simline(hitline, xarr=None, press=oh.OP_PRESS, T=oh.TEMP):
         Pressure, torr. Default to value in ohcalcs.
     T : float (optional)
         Temperature, K. Default to value in ohcalcs.
+    mass : float (optional)
+        Mass, kg molec^-1. Default to value in ohcalcs.
 
     Returns
     -------
@@ -62,8 +64,8 @@ def simline(hitline, xarr=None, press=oh.OP_PRESS, T=oh.TEMP):
     freq = wnum*c*100 # Hz
 
     # Voigt line parameters
-    sigma = (k*T/(oh.MASS*c**2))**(0.5) * freq # Doppler: Gaussian std dev, Hz
-    gamma = (g_air*c*100) * press/760. # pressure: Lorentzian HWHM, Hz
+    sigma = oh.doppler_sigma(freq, T, mass)
+    gamma = oh.pressure_gamma(g_air, press)
 
     # come up with xarr values if none passed to function
     if xarr == None:

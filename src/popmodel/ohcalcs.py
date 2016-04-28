@@ -502,6 +502,15 @@ def sat(bandwidth, beam, q=QUENCHB, freq=NU12, a21=ABA):
 
     return sat_power
 
+# Voigt line parameters
+def doppler_sigma(freq, t=TEMP, m=MASS):
+    '''Calculate Doppler broadening sigma (std dev), Hz.'''
+    return (kb*t/(m*c**2))**(0.5) * freq
+
+def pressure_gamma(g_air, press=OP_PRESS):
+    '''Calculate pressure broadening gamma (hwhm), Hz.'''
+    return (g_air*c*100) * press/760. # pressure: Lorentzian HWHM, Hz
+
 def voigt(xarr, amp, xcen, sigma, gamma, normalized=False):
     '''Normalized Voigt profile from pyspeckit, on Github.
 
