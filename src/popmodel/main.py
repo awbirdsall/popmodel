@@ -545,6 +545,13 @@ class KineticsRun(object):
             tindex = np.arange(t_steps)
             self.sweepfunc = np.zeros(np.size(tindex))
 
+        # sweepfunc is list of indices, so convert to integers (non-integer
+        # index arguments deprecated), with check to avoid silent conversion of
+        # non-int values (which shouldn't happen)
+        if (self.sweepfunc.astype(int) != self.sweepfunc).any():
+            raise ValueError("Noninteger sweepfunc values generated")
+        self.sweepfunc = self.sweepfunc.astype(int)
+
         self.logger.info('solveode: integrating %.2g s, step size %.2g s',
                          tl, dt)
 
@@ -859,7 +866,7 @@ class KineticsRun(object):
         List describing subpopulations to plot. Each string in list must be
         a  three-character code of form 'lsn' where l is level (a, b, c, or d),
         s is sublevel ([s]wept, [h]alf of lambda doublet, lambda [d]oublet, or
-        entire [l]evel (default) and n is normalization (fraction of lambda
+        entire [l]evel (default)) and n is normalization (fraction of lambda
         [d]oublet, [l]evel, entire [p]opulation (default), or [a]bsolute).
 
         Outputs
