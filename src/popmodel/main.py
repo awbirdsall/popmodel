@@ -501,6 +501,12 @@ class KineticsRun(object):
                          self.detcell['temp'],
                          self.detcell['ohtot'])
         tl = self.odepar['inttime'] # total int time
+        # start calculation time at t<0 if laser has negative delay.
+        # Otherwise 0 is default start time.
+        if self.uvlaser['delay']>=0 and self.irlaser['delay']>=0:
+            tstart = 0
+        else:
+            tstart = np.min([self.uvlaser['delay'], self.irlaser['delay']])
 
         # set-up steps only required if IR laser is swept:
         if self.dosweep:
@@ -514,7 +520,7 @@ class KineticsRun(object):
             avg_bintime = (self.sweep.tsweep /
                            (2*self.sweep.width/self.sweep.binwidth))
             dt = avg_bintime/self.sweep.avg_step_in_bin
-            self.tbins = np.arange(0, tl+dt, dt)
+            self.tbins = np.arange(tstart, tstart+tl+dt, dt)
             t_steps = np.size(self.tbins)
 
             # define local variables for convenience
@@ -540,7 +546,7 @@ class KineticsRun(object):
 
         else: # single 'bin' excited by laser. Set up in __init__
             dt = self.odepar['dt'] # s
-            self.tbins = np.arange(0, tl+dt, dt)
+            self.tbins = np.arange(tstart, tstart+tl+dt, dt)
             t_steps = np.size(self.tbins)
             tindex = np.arange(t_steps)
             self.sweepfunc = np.zeros(np.size(tindex))
