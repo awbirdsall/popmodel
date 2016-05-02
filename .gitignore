@@ -10,3 +10,7 @@ popmodel.egg-info/
 *.csv
 raw_hitran/
 .cache/
+futurize*
+.coverage*
+htmlcov/
+.tox/
